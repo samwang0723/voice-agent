@@ -1,22 +1,391 @@
-<script>
-  const ws = new WebSocket('ws://localhost:3000/ws');
-
-  navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
-    const recorder = new MediaRecorder(stream, {
-      mimeType: 'audio/webm;codecs=opus',
-      audioBitsPerSecond: 16000,
-    });
-
-    recorder.ondataavailable = (e) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(e.data);
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Voice Agent Test</title>
+    <style>
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 2rem;
+        background: #f5f5f5;
       }
-    };
+      .container {
+        background: white;
+        padding: 2rem;
+        border-radius: 12px;
+        box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
+      }
+      h1 {
+        color: #333;
+        text-align: center;
+        margin-bottom: 2rem;
+      }
+      .status {
+        padding: 1rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+        font-weight: 500;
+      }
+      .status.connected {
+        background: #d4edda;
+        color: #155724;
+        border: 1px solid #c3e6cb;
+      }
+      .status.disconnected {
+        background: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+      }
+      .controls {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 2rem;
+        flex-wrap: wrap;
+      }
+      button {
+        padding: 0.75rem 1.5rem;
+        border: none;
+        border-radius: 6px;
+        font-size: 1rem;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      button:hover {
+        transform: translateY(-1px);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+      }
+      .primary {
+        background: #007bff;
+        color: white;
+      }
+      .primary:hover:not(:disabled) {
+        background: #0056b3;
+      }
+      .danger {
+        background: #dc3545;
+        color: white;
+      }
+      .danger:hover:not(:disabled) {
+        background: #c82333;
+      }
+      .success {
+        background: #28a745;
+        color: white;
+      }
+      .success:hover:not(:disabled) {
+        background: #1e7e34;
+      }
+      .messages {
+        max-height: 400px;
+        overflow-y: auto;
+        border: 1px solid #ddd;
+        border-radius: 6px;
+        padding: 1rem;
+        background: #f8f9fa;
+      }
+      .message {
+        margin-bottom: 0.5rem;
+        padding: 0.5rem;
+        border-radius: 4px;
+        background: white;
+        border-left: 4px solid #007bff;
+      }
+      .message.transcript {
+        border-left-color: #28a745;
+      }
+      .message.error {
+        border-left-color: #dc3545;
+        background: #fff5f5;
+      }
+      .timestamp {
+        font-size: 0.8rem;
+        color: #666;
+        margin-bottom: 0.25rem;
+      }
+      .recording {
+        background: #dc3545 !important;
+        animation: pulse 1s infinite;
+      }
+      @keyframes pulse {
+        0% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.7;
+        }
+        100% {
+          opacity: 1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🎤 Voice Agent Test</h1>
 
-    recorder.start(200); // 200ms chunks
-  });
+      <div id="status" class="status disconnected">
+        Disconnected from server
+      </div>
 
-  ws.onmessage = (event) => {
-    console.log('Transcription:', event.data);
-  };
-</script>
+      <div class="controls">
+        <button id="connectBtn" class="primary">Connect WebSocket</button>
+        <button id="recordBtn" class="success" disabled>Start Recording</button>
+        <button id="testBtn" class="primary">Test Audio Worker</button>
+        <button id="clearBtn" class="danger">Clear Messages</button>
+      </div>
+
+      <div class="messages" id="messages">
+        <div class="message">
+          <div class="timestamp">System</div>
+          <div>Click "Connect WebSocket" to start</div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      let ws = null;
+      let mediaRecorder = null;
+      let audioStream = null;
+      let isRecording = false;
+
+      const statusEl = document.getElementById('status');
+      const connectBtn = document.getElementById('connectBtn');
+      const recordBtn = document.getElementById('recordBtn');
+      const testBtn = document.getElementById('testBtn');
+      const clearBtn = document.getElementById('clearBtn');
+      const messagesEl = document.getElementById('messages');
+
+      function addMessage(content, type = 'info') {
+        const messageEl = document.createElement('div');
+        messageEl.className = `message ${type}`;
+        messageEl.innerHTML = `
+                <div class="timestamp">${new Date().toLocaleTimeString()}</div>
+                <div>${content}</div>
+            `;
+        messagesEl.appendChild(messageEl);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+
+      function updateStatus(connected, workerReady = false) {
+        if (connected) {
+          statusEl.className = 'status connected';
+          statusEl.textContent = `Connected to server ${workerReady ? '(Worker Ready)' : '(Worker Loading...)'}`;
+          connectBtn.textContent = 'Disconnect';
+          recordBtn.disabled = !workerReady;
+        } else {
+          statusEl.className = 'status disconnected';
+          statusEl.textContent = 'Disconnected from server';
+          connectBtn.textContent = 'Connect WebSocket';
+          recordBtn.disabled = true;
+        }
+      }
+
+      function connectWebSocket() {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.close();
+          return;
+        }
+
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws`;
+
+        ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+          addMessage('WebSocket connected');
+          updateStatus(true);
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+
+            switch (data.type) {
+              case 'connected':
+                addMessage(`Server: ${data.message}`);
+                updateStatus(true, data.workerReady);
+                break;
+              case 'transcript':
+                addMessage(`Transcript: ${data.transcript}`, 'transcript');
+                break;
+              default:
+                addMessage(`Received: ${event.data}`);
+            }
+          } catch (e) {
+            addMessage(`Raw message: ${event.data}`);
+          }
+        };
+
+        ws.onclose = () => {
+          addMessage('WebSocket disconnected');
+          updateStatus(false);
+        };
+
+        ws.onerror = (error) => {
+          addMessage(
+            `WebSocket error: ${error.message || 'Connection failed'}`,
+            'error'
+          );
+        };
+      }
+
+      let audioContext = null;
+      let audioWorkletNode = null;
+
+      async function toggleRecording() {
+        if (!isRecording) {
+          try {
+            console.log('🎙️ Requesting microphone access...');
+            audioStream = await navigator.mediaDevices.getUserMedia({
+              audio: {
+                sampleRate: 16000,
+                channelCount: 1,
+                echoCancellation: true,
+                noiseSuppression: true,
+              },
+            });
+            console.log('✅ Microphone access granted');
+
+            // Create audio context
+            audioContext = new AudioContext({ sampleRate: 16000 });
+            console.log(
+              `🔊 Audio context created, sample rate: ${audioContext.sampleRate}`
+            );
+
+            // Resume audio context if it's suspended
+            if (audioContext.state === 'suspended') {
+              await audioContext.resume();
+              console.log('▶️ Audio context resumed');
+            }
+
+            // Load the audio worklet
+            try {
+              await audioContext.audioWorklet.addModule('./audio-processor.js');
+              console.log('📁 Audio worklet loaded');
+            } catch (e) {
+              console.error('❌ Failed to load audio worklet:', e);
+              throw e;
+            }
+
+            // Create audio worklet node
+            audioWorkletNode = new AudioWorkletNode(
+              audioContext,
+              'audio-processor'
+            );
+
+            // Handle messages from the worklet
+            audioWorkletNode.port.onmessage = (event) => {
+              if (
+                event.data.type === 'audiodata' &&
+                ws &&
+                ws.readyState === WebSocket.OPEN
+              ) {
+                console.log(
+                  `🎤 Sending audio data: ${event.data.length} samples, max: ${event.data.max.toFixed(3)}`
+                );
+
+                // Convert Float32Array to ArrayBuffer and send
+                const buffer = new ArrayBuffer(event.data.audioData.length * 4);
+                const view = new Float32Array(buffer);
+                view.set(event.data.audioData);
+
+                ws.send(buffer);
+              }
+            };
+
+            // Connect audio nodes
+            const source = audioContext.createMediaStreamSource(audioStream);
+            source.connect(audioWorkletNode);
+
+            // Start recording
+            audioWorkletNode.port.postMessage({ type: 'start' });
+
+            isRecording = true;
+            recordBtn.textContent = 'Stop Recording';
+            recordBtn.className = 'danger recording';
+            addMessage('Recording started');
+            console.log('🔴 Recording started');
+          } catch (error) {
+            console.error('❌ Recording failed:', error);
+            addMessage(
+              `Failed to access microphone: ${error.message}`,
+              'error'
+            );
+          }
+        } else {
+          console.log('⏹️ Stopping recording...');
+
+          if (audioWorkletNode) {
+            audioWorkletNode.port.postMessage({ type: 'stop' });
+            audioWorkletNode.disconnect();
+            audioWorkletNode = null;
+          }
+
+          if (audioContext) {
+            await audioContext.close();
+            audioContext = null;
+          }
+
+          if (audioStream) {
+            audioStream.getTracks().forEach((track) => track.stop());
+          }
+
+          isRecording = false;
+          recordBtn.textContent = 'Start Recording';
+          recordBtn.className = 'success';
+          addMessage('Recording stopped');
+          console.log('⏹️ Recording stopped');
+        }
+      }
+
+      async function testAudioWorker() {
+        try {
+          const response = await fetch('/api/health');
+          const data = await response.json();
+          addMessage(`Health check: ${JSON.stringify(data, null, 2)}`);
+
+          // Test manual transcription
+          const testAudio = new Float32Array(1600); // 0.1 second of silence at 16kHz
+          testAudio.fill(0.1 * Math.sin(2 * Math.PI * 440)); // 440Hz tone
+
+          const transcribeResponse = await fetch('/api/transcribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ audioData: Array.from(testAudio) }),
+          });
+
+          const transcribeData = await transcribeResponse.json();
+          addMessage(
+            `Transcription test: ${JSON.stringify(transcribeData, null, 2)}`
+          );
+        } catch (error) {
+          addMessage(`Test failed: ${error.message}`, 'error');
+        }
+      }
+
+      function clearMessages() {
+        messagesEl.innerHTML = '';
+        addMessage('Messages cleared');
+      }
+
+      // Event listeners
+      connectBtn.addEventListener('click', connectWebSocket);
+      recordBtn.addEventListener('click', toggleRecording);
+      testBtn.addEventListener('click', testAudioWorker);
+      clearBtn.addEventListener('click', clearMessages);
+
+      // Auto-connect on page load
+      window.addEventListener('load', () => {
+        setTimeout(connectWebSocket, 500);
+      });
+    </script>
+  </body>
+</html>

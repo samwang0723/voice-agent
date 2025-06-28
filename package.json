@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@ericedouard/vad-node-realtime": "^0.2.0",
+    "groq-sdk": "^0.26.0",
     "hono": "^4.8.3"
   },
   "scripts": {
