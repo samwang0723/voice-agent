@@ -3,204 +3,381 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Voice Agent Test</title>
+    <title>Voice Agent</title>
     <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      /* Performance optimizations */
+      .voice-button,
+      .sound-wave,
+      .voice-icon {
+        transform: translateZ(0);
+        backface-visibility: hidden;
+        perspective: 1000px;
+      }
+
       body {
         font-family:
           -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-        max-width: 800px;
-        margin: 0 auto;
-        padding: 2rem;
-        background: #f5f5f5;
-      }
-      .container {
-        background: white;
-        padding: 2rem;
-        border-radius: 12px;
-        box-shadow: 0 2px 20px rgba(0, 0, 0, 0.1);
-      }
-      h1 {
-        color: #333;
-        text-align: center;
-        margin-bottom: 2rem;
-      }
-      .status {
-        padding: 1rem;
-        border-radius: 8px;
-        margin-bottom: 1rem;
-        font-weight: 500;
-      }
-      .status.connected {
-        background: #d4edda;
-        color: #155724;
-        border: 1px solid #c3e6cb;
-      }
-      .status.disconnected {
-        background: #f8d7da;
-        color: #721c24;
-        border: 1px solid #f5c6cb;
-      }
-      .controls {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
         display: flex;
-        gap: 1rem;
-        margin-bottom: 2rem;
-        flex-wrap: wrap;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        color: white;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
       }
-      button {
-        padding: 0.75rem 1.5rem;
+
+      .container {
+        text-align: center;
+        max-width: 600px;
+        padding: 2rem;
+      }
+
+      h1 {
+        font-size: 2.5rem;
+        margin-bottom: 1rem;
+        font-weight: 300;
+      }
+
+      .subtitle {
+        font-size: 1.1rem;
+        opacity: 0.8;
+        margin-bottom: 3rem;
+      }
+
+      .voice-container {
+        position: relative;
+        display: inline-block;
+        margin: 2rem 0;
+      }
+
+      .voice-button {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
         border: none;
-        border-radius: 6px;
-        font-size: 1rem;
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
         cursor: pointer;
-        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+        overflow: hidden;
+        will-change: transform;
       }
-      button:hover {
-        transform: translateY(-1px);
+
+      .voice-button:hover {
+        transform: scale(1.1);
+        background: rgba(255, 255, 255, 0.2);
       }
-      button:disabled {
+
+      .voice-button:disabled {
         opacity: 0.5;
         cursor: not-allowed;
         transform: none;
       }
-      .primary {
-        background: #007bff;
-        color: white;
+
+      .voice-icon {
+        width: 28px;
+        height: 28px;
+        fill: white;
+        transition: all 0.2s ease;
       }
-      .primary:hover:not(:disabled) {
-        background: #0056b3;
+
+      .sound-waves {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 140px;
+        height: 140px;
+        pointer-events: none;
       }
-      .danger {
-        background: #dc3545;
-        color: white;
+
+      .sound-wave {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        border: 1.5px solid rgba(255, 255, 255, 0.5);
+        border-radius: 50%;
+        animation: pulse 1.6s ease-out infinite;
+        will-change: transform, opacity;
       }
-      .danger:hover:not(:disabled) {
-        background: #c82333;
+
+      .sound-wave:nth-child(1) {
+        width: 100px;
+        height: 100px;
+        animation-delay: 0s;
       }
-      .success {
-        background: #28a745;
-        color: white;
+
+      .sound-wave:nth-child(2) {
+        width: 110px;
+        height: 110px;
+        animation-delay: 0.2s;
       }
-      .success:hover:not(:disabled) {
-        background: #1e7e34;
+
+      .sound-wave:nth-child(3) {
+        width: 120px;
+        height: 120px;
+        animation-delay: 0.4s;
       }
-      .messages {
-        max-height: 400px;
-        overflow-y: auto;
-        border: 1px solid #ddd;
-        border-radius: 6px;
-        padding: 1rem;
-        background: #f8f9fa;
+
+      .sound-wave:nth-child(4) {
+        width: 130px;
+        height: 130px;
+        animation-delay: 0.6s;
       }
-      .message {
-        margin-bottom: 0.5rem;
-        padding: 0.5rem;
-        border-radius: 4px;
-        background: white;
-        border-left: 4px solid #007bff;
-      }
-      .message.transcript {
-        border-left-color: #28a745;
-      }
-      .message.error {
-        border-left-color: #dc3545;
-        background: #fff5f5;
-      }
-      .timestamp {
-        font-size: 0.8rem;
-        color: #666;
-        margin-bottom: 0.25rem;
-      }
-      .recording {
-        background: #dc3545 !important;
-        animation: pulse 1s infinite;
-      }
+
       @keyframes pulse {
         0% {
-          opacity: 1;
+          opacity: 0.7;
+          transform: translate(-50%, -50%) scale(0.9);
         }
         50% {
-          opacity: 0.7;
+          opacity: 0.3;
         }
         100% {
-          opacity: 1;
+          opacity: 0;
+          transform: translate(-50%, -50%) scale(1.3);
         }
+      }
+
+      .listening {
+        background: rgba(255, 107, 107, 0.3) !important;
+        animation: breathe 1.2s ease-in-out infinite;
+        box-shadow: 0 0 20px rgba(255, 107, 107, 0.3);
+      }
+
+      @keyframes breathe {
+        0%,
+        100% {
+          transform: scale(1);
+          box-shadow: 0 0 20px rgba(255, 107, 107, 0.3);
+        }
+        50% {
+          transform: scale(1.05);
+          box-shadow: 0 0 30px rgba(255, 107, 107, 0.4);
+        }
+      }
+
+      .status-indicator {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        margin-right: 8px;
+        background: #ff6b6b;
+      }
+
+      .status-indicator.connected {
+        background: #51cf66;
+      }
+
+      .status-text {
+        font-size: 1rem;
+        margin: 1rem 0;
+        padding: 0.5rem 1rem;
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 20px;
+        backdrop-filter: blur(10px);
+        display: inline-block;
+      }
+
+      .controls {
+        margin-top: 2rem;
+        display: flex;
+        gap: 1rem;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+
+      .control-btn {
+        padding: 0.5rem 1rem;
+        border: 1px solid rgba(255, 255, 255, 0.3);
+        border-radius: 20px;
+        background: rgba(255, 255, 255, 0.1);
+        color: white;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        backdrop-filter: blur(10px);
+      }
+
+      .control-btn:hover {
+        background: rgba(255, 255, 255, 0.2);
+        transform: translateY(-2px);
+      }
+
+      .messages {
+        margin-top: 2rem;
+        max-height: 300px;
+        overflow-y: auto;
+        text-align: left;
+      }
+
+      .message {
+        background: rgba(255, 255, 255, 0.1);
+        margin-bottom: 0.5rem;
+        padding: 0.75rem;
+        border-radius: 10px;
+        backdrop-filter: blur(10px);
+        border-left: 3px solid rgba(255, 255, 255, 0.5);
+      }
+
+      .message.transcript {
+        border-left-color: #51cf66;
+        background: rgba(81, 207, 102, 0.1);
+      }
+
+      .message.error {
+        border-left-color: #ff6b6b;
+        background: rgba(255, 107, 107, 0.1);
+      }
+
+      .timestamp {
+        font-size: 0.8rem;
+        opacity: 0.7;
+        margin-bottom: 0.25rem;
+      }
+
+      .hidden {
+        display: none;
       }
     </style>
   </head>
   <body>
     <div class="container">
-      <h1>🎤 Voice Agent Test</h1>
+      <h1>🎤 Voice Agent</h1>
+      <p class="subtitle">Speak naturally, AI listens intelligently</p>
 
-      <div id="status" class="status disconnected">
-        Disconnected from server
+      <div class="status-text">
+        <span id="statusIndicator" class="status-indicator"></span>
+        <span id="statusText">Connecting...</span>
+      </div>
+
+      <div class="voice-container">
+        <button id="voiceButton" class="voice-button" disabled>
+          <svg class="voice-icon" viewBox="0 0 24 24">
+            <path
+              d="M12 2C13.1 2 14 2.9 14 4V12C14 13.1 13.1 14 12 14C10.9 14 10 13.1 10 12V4C10 2.9 10.9 2 12 2ZM19 10V12C19 15.3 16.3 18 13 18V20H11V18C7.7 18 5 15.3 5 12V10H7V12C7 14.2 8.8 16 11 16H13C15.2 16 17 14.2 17 12V10H19Z"
+            />
+          </svg>
+        </button>
+        <div id="soundWaves" class="sound-waves hidden">
+          <div class="sound-wave"></div>
+          <div class="sound-wave"></div>
+          <div class="sound-wave"></div>
+          <div class="sound-wave"></div>
+        </div>
       </div>
 
       <div class="controls">
-        <button id="connectBtn" class="primary">Connect WebSocket</button>
-        <button id="recordBtn" class="success" disabled>Start Recording</button>
-        <button id="testBtn" class="primary">Test Audio Worker</button>
-        <button id="clearBtn" class="danger">Clear Messages</button>
+        <button id="clearBtn" class="control-btn">Clear Messages</button>
+        <button id="testBtn" class="control-btn">Test Connection</button>
+        <button id="manualBtn" class="control-btn">Manual Record</button>
       </div>
 
-      <div class="messages" id="messages">
-        <div class="message">
-          <div class="timestamp">System</div>
-          <div>Click "Connect WebSocket" to start</div>
-        </div>
-      </div>
+      <div class="messages" id="messages"></div>
     </div>
+
+    <!-- VAD Library Scripts -->
+    <script src="https://unpkg.com/onnxruntime-web@1.14.0/dist/ort.js"></script>
+    <script>
+      // Configure ONNX Runtime for maximum browser compatibility
+      window.addEventListener('DOMContentLoaded', () => {
+        if (typeof ort !== 'undefined') {
+          // Use unpkg for better reliability
+          ort.env.wasm.wasmPaths =
+            'https://unpkg.com/onnxruntime-web@1.14.0/dist/';
+
+          // Conservative settings for maximum compatibility
+          ort.env.wasm.numThreads = 1;
+          ort.env.wasm.simd = false;
+          ort.env.wasm.proxy = false;
+
+          // Force CPU backend as fallback
+          ort.env.executionProviders = ['cpu'];
+
+          // Minimal logging
+          ort.env.logLevel = 'error';
+
+          console.log('ONNX Runtime configured for compatibility mode');
+        }
+      });
+    </script>
+    <script src="https://unpkg.com/@ricky0123/vad-web@0.0.22/dist/bundle.min.js"></script>
 
     <script>
       let ws = null;
-      let mediaRecorder = null;
-      let audioStream = null;
-      let isRecording = false;
+      let vadInstance = null;
+      let isListening = false;
+      let isConnected = false;
 
-      const statusEl = document.getElementById('status');
-      const connectBtn = document.getElementById('connectBtn');
-      const recordBtn = document.getElementById('recordBtn');
-      const testBtn = document.getElementById('testBtn');
+      const statusIndicator = document.getElementById('statusIndicator');
+      const statusText = document.getElementById('statusText');
+      const voiceButton = document.getElementById('voiceButton');
+      const soundWaves = document.getElementById('soundWaves');
       const clearBtn = document.getElementById('clearBtn');
+      const testBtn = document.getElementById('testBtn');
+      const manualBtn = document.getElementById('manualBtn');
       const messagesEl = document.getElementById('messages');
+
+      let manualRecorder = null;
+      let isManualRecording = false;
 
       function addMessage(content, type = 'info') {
         const messageEl = document.createElement('div');
         messageEl.className = `message ${type}`;
         messageEl.innerHTML = `
-                <div class="timestamp">${new Date().toLocaleTimeString()}</div>
-                <div>${content}</div>
-            `;
+          <div class="timestamp">${new Date().toLocaleTimeString()}</div>
+          <div>${content}</div>
+        `;
         messagesEl.appendChild(messageEl);
         messagesEl.scrollTop = messagesEl.scrollHeight;
       }
 
-      function updateStatus(connected, workerReady = false) {
+      function updateStatus(connected, listening = false) {
+        isConnected = connected;
+
         if (connected) {
-          statusEl.className = 'status connected';
-          statusEl.textContent = `Connected to server ${workerReady ? '(Worker Ready)' : '(Worker Loading...)'}`;
-          connectBtn.textContent = 'Disconnect';
-          recordBtn.disabled = !workerReady;
+          statusIndicator.className = 'status-indicator connected';
+          statusText.textContent = listening
+            ? 'Listening...'
+            : 'Ready to listen';
+          voiceButton.disabled = false;
         } else {
-          statusEl.className = 'status disconnected';
-          statusEl.textContent = 'Disconnected from server';
-          connectBtn.textContent = 'Connect WebSocket';
-          recordBtn.disabled = true;
+          statusIndicator.className = 'status-indicator';
+          statusText.textContent = 'Disconnected';
+          voiceButton.disabled = true;
+        }
+
+        if (listening) {
+          voiceButton.classList.add('listening');
+          soundWaves.classList.remove('hidden');
+        } else {
+          voiceButton.classList.remove('listening');
+          soundWaves.classList.add('hidden');
         }
       }
 
       function connectWebSocket() {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.close();
-          return;
-        }
-
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws`;
 
         ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
-          addMessage('WebSocket connected');
+          console.log('WebSocket connected');
+          addMessage('Connected to voice agent');
           updateStatus(true);
         };
 
@@ -211,180 +388,315 @@
             switch (data.type) {
               case 'connected':
                 addMessage(`Server: ${data.message}`);
-                updateStatus(true, data.workerReady);
                 break;
               case 'transcript':
-                addMessage(`Transcript: ${data.transcript}`, 'transcript');
+                addMessage(`🎯 ${data.transcript}`, 'transcript');
+                break;
+              case 'error':
+                addMessage(`❌ ${data.message}`, 'error');
                 break;
               default:
-                addMessage(`Received: ${event.data}`);
+                addMessage(`📨 ${event.data}`);
             }
           } catch (e) {
-            addMessage(`Raw message: ${event.data}`);
+            addMessage(`📨 ${event.data}`);
           }
         };
 
         ws.onclose = () => {
-          addMessage('WebSocket disconnected');
+          console.log('WebSocket disconnected');
+          addMessage('Disconnected from server');
           updateStatus(false);
+          setTimeout(connectWebSocket, 3000); // Auto-reconnect
         };
 
         ws.onerror = (error) => {
-          addMessage(
-            `WebSocket error: ${error.message || 'Connection failed'}`,
-            'error'
-          );
+          console.error('WebSocket error:', error);
+          addMessage('Connection error - retrying...', 'error');
         };
       }
 
-      let audioContext = null;
-      let audioWorkletNode = null;
+      async function initializeVAD() {
+        try {
+          console.log('Initializing VAD...');
+          addMessage('🔄 Initializing voice detection...');
 
-      async function toggleRecording() {
-        if (!isRecording) {
-          try {
-            console.log('🎙️ Requesting microphone access...');
-            audioStream = await navigator.mediaDevices.getUserMedia({
-              audio: {
-                sampleRate: 16000,
-                channelCount: 1,
-                echoCancellation: true,
-                noiseSuppression: true,
-              },
-            });
-            console.log('✅ Microphone access granted');
+          // Wait for ONNX Runtime to be fully loaded and check availability
+          await new Promise((resolve) => setTimeout(resolve, 2000));
 
-            // Create audio context
-            audioContext = new AudioContext({ sampleRate: 16000 });
-            console.log(
-              `🔊 Audio context created, sample rate: ${audioContext.sampleRate}`
-            );
+          // Verify ONNX Runtime is properly loaded
+          if (typeof ort === 'undefined') {
+            throw new Error('ONNX Runtime not loaded');
+          }
 
-            // Resume audio context if it's suspended
-            if (audioContext.state === 'suspended') {
-              await audioContext.resume();
-              console.log('▶️ Audio context resumed');
-            }
+          // Check if VAD library is loaded
+          if (typeof vad === 'undefined') {
+            throw new Error('VAD library not loaded');
+          }
 
-            // Load the audio worklet
+          console.log('ONNX Runtime version:', ort.version || 'unknown');
+          console.log('VAD library loaded successfully');
+
+          // Try multiple configurations for better compatibility
+          const vadConfigs = [
+            // Simplest configuration first
+            {
+              model: 'legacy',
+              positiveSpeechThreshold: 0.5,
+              negativeSpeechThreshold: 0.35,
+              preSpeechPadFrames: 1,
+              minSpeechFrames: 3,
+            },
+            // More detailed legacy config
+            {
+              model: 'legacy',
+              positiveSpeechThreshold: 0.6,
+              negativeSpeechThreshold: 0.4,
+              redemptionFrames: 8,
+              preSpeechPadFrames: 1,
+              minSpeechFrames: 4,
+              frameSamples: 1536,
+            },
+            // V5 model as last resort
+            {
+              model: 'v5',
+              positiveSpeechThreshold: 0.7,
+              negativeSpeechThreshold: 0.55,
+              redemptionFrames: 8,
+              preSpeechPadFrames: 1,
+              minSpeechFrames: 4,
+              frameSamples: 1536,
+            },
+          ];
+
+          let vadInitialized = false;
+
+          for (const config of vadConfigs) {
             try {
-              await audioContext.audioWorklet.addModule('./audio-processor.js');
-              console.log('📁 Audio worklet loaded');
-            } catch (e) {
-              console.error('❌ Failed to load audio worklet:', e);
-              throw e;
+              console.log(`Trying VAD with ${config.model} model...`);
+              addMessage(`🔄 Trying ${config.model} model...`);
+
+              vadInstance = await vad.MicVAD.new({
+                onSpeechStart: () => {
+                  console.log('Speech started');
+                  updateStatus(isConnected, true);
+                },
+                onSpeechEnd: (audio) => {
+                  console.log('Speech ended, audio length:', audio.length);
+                  updateStatus(isConnected, false);
+
+                  if (ws && ws.readyState === WebSocket.OPEN) {
+                    // Send audio data as Float32Array buffer
+                    const buffer = new ArrayBuffer(audio.length * 4);
+                    const view = new Float32Array(buffer);
+                    view.set(audio);
+
+                    console.log('Sending audio data:', audio.length, 'samples');
+                    ws.send(buffer);
+                    addMessage(`🎤 Audio sent (${audio.length} samples)`);
+                  } else {
+                    addMessage('❌ Not connected to server', 'error');
+                  }
+                },
+                onVADMisfire: () => {
+                  console.log('VAD misfire');
+                  updateStatus(isConnected, false);
+                },
+                ...config,
+              });
+
+              console.log(
+                `VAD initialized successfully with ${config.model} model`
+              );
+              addMessage(`✅ Voice detection ready (${config.model} model)`);
+              vadInitialized = true;
+              break;
+            } catch (modelError) {
+              console.warn(
+                `Failed to initialize with ${config.model} model:`,
+                modelError
+              );
+              addMessage(`⚠️ ${config.model} model failed, trying next...`);
+              continue;
             }
-
-            // Create audio worklet node
-            audioWorkletNode = new AudioWorkletNode(
-              audioContext,
-              'audio-processor'
-            );
-
-            // Handle messages from the worklet
-            audioWorkletNode.port.onmessage = (event) => {
-              if (
-                event.data.type === 'audiodata' &&
-                ws &&
-                ws.readyState === WebSocket.OPEN
-              ) {
-                console.log(
-                  `🎤 Sending audio data: ${event.data.length} samples, max: ${event.data.max.toFixed(3)}`
-                );
-
-                // Convert Float32Array to ArrayBuffer and send
-                const buffer = new ArrayBuffer(event.data.audioData.length * 4);
-                const view = new Float32Array(buffer);
-                view.set(event.data.audioData);
-
-                ws.send(buffer);
-              }
-            };
-
-            // Connect audio nodes
-            const source = audioContext.createMediaStreamSource(audioStream);
-            source.connect(audioWorkletNode);
-
-            // Start recording
-            audioWorkletNode.port.postMessage({ type: 'start' });
-
-            isRecording = true;
-            recordBtn.textContent = 'Stop Recording';
-            recordBtn.className = 'danger recording';
-            addMessage('Recording started');
-            console.log('🔴 Recording started');
-          } catch (error) {
-            console.error('❌ Recording failed:', error);
-            addMessage(
-              `Failed to access microphone: ${error.message}`,
-              'error'
-            );
-          }
-        } else {
-          console.log('⏹️ Stopping recording...');
-
-          if (audioWorkletNode) {
-            audioWorkletNode.port.postMessage({ type: 'stop' });
-            audioWorkletNode.disconnect();
-            audioWorkletNode = null;
           }
 
-          if (audioContext) {
-            await audioContext.close();
-            audioContext = null;
+          if (!vadInitialized) {
+            throw new Error('All VAD models failed to initialize');
           }
-
-          if (audioStream) {
-            audioStream.getTracks().forEach((track) => track.stop());
-          }
-
-          isRecording = false;
-          recordBtn.textContent = 'Start Recording';
-          recordBtn.className = 'success';
-          addMessage('Recording stopped');
-          console.log('⏹️ Recording stopped');
+        } catch (error) {
+          console.error('VAD initialization failed:', error);
+          addMessage(`❌ Voice detection failed: ${error.message}`, 'error');
+          addMessage(
+            '💡 Try refreshing the page or check browser compatibility',
+            'error'
+          );
         }
       }
 
-      async function testAudioWorker() {
+      async function toggleListening() {
+        if (!vadInstance) {
+          addMessage('❌ Voice detection not initialized', 'error');
+          return;
+        }
+
+        if (!isListening) {
+          try {
+            console.log('Starting VAD...');
+            await vadInstance.start();
+            isListening = true;
+            addMessage('🎤 Voice detection started');
+          } catch (error) {
+            console.error('Failed to start VAD:', error);
+            addMessage(`❌ Failed to start: ${error.message}`, 'error');
+          }
+        } else {
+          console.log('Stopping VAD...');
+          vadInstance.pause();
+          isListening = false;
+          updateStatus(isConnected, false);
+          addMessage('⏹️ Voice detection stopped');
+        }
+      }
+
+      async function testConnection() {
         try {
           const response = await fetch('/api/health');
           const data = await response.json();
-          addMessage(`Health check: ${JSON.stringify(data, null, 2)}`);
-
-          // Test manual transcription
-          const testAudio = new Float32Array(1600); // 0.1 second of silence at 16kHz
-          testAudio.fill(0.1 * Math.sin(2 * Math.PI * 440)); // 440Hz tone
-
-          const transcribeResponse = await fetch('/api/transcribe', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ audioData: Array.from(testAudio) }),
-          });
-
-          const transcribeData = await transcribeResponse.json();
-          addMessage(
-            `Transcription test: ${JSON.stringify(transcribeData, null, 2)}`
-          );
+          addMessage(`🔍 Health: ${JSON.stringify(data, null, 2)}`);
         } catch (error) {
-          addMessage(`Test failed: ${error.message}`, 'error');
+          addMessage(`❌ Test failed: ${error.message}`, 'error');
         }
       }
 
       function clearMessages() {
         messagesEl.innerHTML = '';
-        addMessage('Messages cleared');
+        addMessage('🧹 Messages cleared');
+      }
+
+      // Manual recording fallback when VAD fails
+      async function toggleManualRecording() {
+        if (!isManualRecording) {
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+              audio: { sampleRate: 16000, channelCount: 1 },
+            });
+
+            manualRecorder = new MediaRecorder(stream, {
+              mimeType: 'audio/webm;codecs=opus',
+            });
+
+            const chunks = [];
+            manualRecorder.ondataavailable = (e) => chunks.push(e.data);
+
+            manualRecorder.onstop = async () => {
+              const blob = new Blob(chunks, { type: 'audio/webm' });
+              const arrayBuffer = await blob.arrayBuffer();
+
+              if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(arrayBuffer);
+                addMessage('🎤 Manual recording sent');
+              } else {
+                addMessage('❌ Not connected to server', 'error');
+              }
+
+              stream.getTracks().forEach((track) => track.stop());
+            };
+
+            manualRecorder.start();
+            isManualRecording = true;
+            manualBtn.textContent = 'Stop Recording';
+            addMessage('🔴 Manual recording started');
+          } catch (error) {
+            addMessage(`❌ Manual recording failed: ${error.message}`, 'error');
+          }
+        } else {
+          manualRecorder.stop();
+          isManualRecording = false;
+          manualBtn.textContent = 'Manual Record';
+          addMessage('⏹️ Manual recording stopped');
+        }
       }
 
       // Event listeners
-      connectBtn.addEventListener('click', connectWebSocket);
-      recordBtn.addEventListener('click', toggleRecording);
-      testBtn.addEventListener('click', testAudioWorker);
+      voiceButton.addEventListener('click', toggleListening);
       clearBtn.addEventListener('click', clearMessages);
+      testBtn.addEventListener('click', testConnection);
+      manualBtn.addEventListener('click', toggleManualRecording);
 
-      // Auto-connect on page load
-      window.addEventListener('load', () => {
-        setTimeout(connectWebSocket, 500);
+      // Check browser compatibility
+      function checkBrowserCompatibility() {
+        const isCompatible = {
+          webAssembly: typeof WebAssembly !== 'undefined',
+          audioContext:
+            typeof AudioContext !== 'undefined' ||
+            typeof webkitAudioContext !== 'undefined',
+          mediaDevices:
+            navigator.mediaDevices && navigator.mediaDevices.getUserMedia,
+          webWorkers: typeof Worker !== 'undefined',
+          webSockets: typeof WebSocket !== 'undefined',
+        };
+
+        const incompatible = Object.entries(isCompatible)
+          .filter(([_, supported]) => !supported)
+          .map(([feature, _]) => feature);
+
+        if (incompatible.length > 0) {
+          addMessage(
+            `❌ Browser missing features: ${incompatible.join(', ')}`,
+            'error'
+          );
+          addMessage(
+            '💡 Try using Chrome, Firefox, or Safari for best compatibility',
+            'error'
+          );
+          return false;
+        }
+
+        addMessage('✅ Browser compatibility check passed');
+        return true;
+      }
+
+      // Initialize everything
+      window.addEventListener('load', async () => {
+        addMessage('🚀 Initializing voice agent...');
+
+        // Check browser compatibility first
+        if (!checkBrowserCompatibility()) {
+          addMessage('❌ Browser not compatible with voice detection', 'error');
+          return;
+        }
+
+        // Connect WebSocket first
+        connectWebSocket();
+
+        // Initialize VAD with retry logic
+        let initAttempts = 0;
+        const maxAttempts = 3;
+
+        while (initAttempts < maxAttempts && !vadInstance) {
+          initAttempts++;
+          addMessage(
+            `🔄 Initialization attempt ${initAttempts}/${maxAttempts}`
+          );
+          await initializeVAD();
+
+          if (!vadInstance && initAttempts < maxAttempts) {
+            addMessage('⏳ Waiting before retry...', 'error');
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+          }
+        }
+
+        if (vadInstance) {
+          addMessage('✨ Ready! Click the microphone to start listening');
+        } else {
+          addMessage(
+            '❌ Failed to initialize voice detection after all attempts',
+            'error'
+          );
+          addMessage('💡 Manual recording available as fallback', 'error');
+          addMessage('🔄 Use "Manual Record" button to record audio manually');
+        }
       });
     </script>
   </body>

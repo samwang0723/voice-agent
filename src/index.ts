@@ -9,58 +9,6 @@ const app = new Hono();
 // Serve static files
 app.use('/*', serveStatic({ root: './public' }));
 
-// Ensure audio worklet is served with correct MIME type
-app.get('/audio-processor.js', (c) => {
-  return c.text(
-    `class AudioProcessor extends AudioWorkletProcessor {
-  constructor() {
-    super();
-    this.isRecording = false;
-    
-    this.port.onmessage = (event) => {
-      if (event.data.type === 'start') {
-        this.isRecording = true;
-      } else if (event.data.type === 'stop') {
-        this.isRecording = false;
-      }
-    };
-  }
-
-  process(inputs, outputs, parameters) {
-    const input = inputs[0];
-    
-    if (input && input.length > 0 && this.isRecording) {
-      const inputChannel = input[0];
-      
-      if (inputChannel && inputChannel.length > 0) {
-        // Check if there's actual audio data (not just silence)
-        const hasAudio = inputChannel.some(sample => Math.abs(sample) > 0.001);
-        
-        if (hasAudio) {
-          // Send audio data to main thread
-          this.port.postMessage({
-            type: 'audiodata',
-            audioData: inputChannel,
-            length: inputChannel.length,
-            max: Math.max(...inputChannel)
-          });
-        }
-      }
-    }
-
-    return true; // Keep the processor alive
-  }
-}
-
-registerProcessor('audio-processor', AudioProcessor);`,
-    {
-      headers: {
-        'Content-Type': 'application/javascript',
-      },
-    }
-  );
-});
-
 const topic = 'voice-stream';
 
 // Worker instance for audio processing
@@ -90,10 +38,10 @@ function initializeWorker(): Promise<void> {
           case 'init-complete':
             if (message.success) {
               workerReady = true;
-              console.log('Audio worker initialized successfully');
+              console.log('✅ Audio worker initialized successfully');
               resolve();
             } else {
-              console.error('Worker initialization failed:', message.error);
+              console.error('❌ Worker initialization failed:', message.error);
               reject(
                 new Error(message.error || 'Worker initialization failed')
               );
@@ -102,7 +50,7 @@ function initializeWorker(): Promise<void> {
 
           case 'speech-end':
             console.log(
-              `🎤 Speech detected, transcript: "${message.transcript}"`
+              `🎤 Speech processed, transcript: "${message.transcript}"`
             );
             if (message.transcript && server) {
               const transcriptMessage = {
@@ -111,25 +59,33 @@ function initializeWorker(): Promise<void> {
                 timestamp: new Date().toISOString(),
               };
               console.log(
-                `📢 Publishing transcript: ${JSON.stringify(transcriptMessage)}`
+                `📢 Broadcasting transcript: ${JSON.stringify(transcriptMessage)}`
               );
               server.publish(topic, JSON.stringify(transcriptMessage));
             } else {
-              console.warn('⚠️ No transcript or server not available');
+              console.warn('⚠️ No transcript generated from audio');
             }
             break;
 
           case 'error':
-            console.error('Worker error:', message.error);
+            console.error('❌ Worker error:', message.error);
+            if (server) {
+              const errorMessage = {
+                type: 'error',
+                message: message.error,
+                timestamp: new Date().toISOString(),
+              };
+              server.publish(topic, JSON.stringify(errorMessage));
+            }
             break;
 
           default:
-            console.warn('Unknown worker message:', message);
+            console.warn('❓ Unknown worker message:', message);
         }
       };
 
       audioWorker.onerror = (error) => {
-        console.error('Worker error:', error);
+        console.error('❌ Worker error:', error);
         reject(error);
       };
 
@@ -151,60 +107,98 @@ app.get(
     onMessage(event, ws) {
       if (typeof event.data === 'string') return;
       if (!workerReady || !audioWorker) {
-        console.warn('Audio worker not ready yet');
+        console.warn('⚠️ Audio worker not ready yet');
         return;
       }
 
       const rawWs = ws.raw as ServerWebSocket;
       const audioBuffer = Buffer.from(event.data as ArrayBuffer);
-      console.log(`📡 Received audio chunk: ${audioBuffer.length} bytes`);
-      processAudioChunk(rawWs, audioBuffer);
+      console.log(`🎵 Received speech segment: ${audioBuffer.length} bytes`);
+      processSpeechSegment(rawWs, audioBuffer);
     },
     onOpen(_, ws) {
       (ws.raw as ServerWebSocket).subscribe(topic);
-      console.log('WebSocket connection opened');
+      console.log('🔌 WebSocket connection opened');
 
       // Send welcome message
       ws.send(
         JSON.stringify({
           type: 'connected',
-          message: 'Voice agent ready',
+          message: 'Voice agent ready for speech processing',
           workerReady,
+          timestamp: new Date().toISOString(),
         })
       );
     },
     onClose(_, ws) {
       (ws.raw as ServerWebSocket).unsubscribe(topic);
-      console.log('WebSocket connection closed');
+      console.log('🔌 WebSocket connection closed');
     },
   }))
 );
 
-function processAudioChunk(ws: ServerWebSocket, chunk: Buffer) {
-  if (!audioWorker || !workerReady) return;
-
-  // Check if the data is already Float32Array (from Web Audio API)
-  let float32Audio: Float32Array;
-
-  if (chunk.length % 4 === 0 && chunk.length >= 4) {
-    // Assume it's Float32Array data from Web Audio API
-    float32Audio = new Float32Array(
-      chunk.buffer,
-      chunk.byteOffset,
-      chunk.length / 4
-    );
-    console.log(`🎵 Processing Float32Array: ${float32Audio.length} samples`);
-  } else {
-    // Fallback to old conversion for 16-bit PCM data
-    float32Audio = convertToFloat32(chunk);
-    console.log(
-      `🎵 Converted PCM to Float32Array: ${float32Audio.length} samples`
-    );
+function processSpeechSegment(ws: ServerWebSocket, chunk: Buffer) {
+  if (!audioWorker || !workerReady) {
+    console.warn('⚠️ Audio worker not available');
+    return;
   }
 
-  // Send audio data to worker for processing
+  let float32Audio: Float32Array;
+  
+  // Detect if this is Float32Array data (from VAD) or WebM audio (from manual recording)
+  if (chunk.length % 4 === 0 && chunk.length >= 16) {
+    // Try to process as Float32Array first (VAD data)
+    try {
+      float32Audio = new Float32Array(
+        chunk.buffer,
+        chunk.byteOffset,
+        chunk.length / 4
+      );
+      
+      // Quick validation - check if values are in reasonable range for audio
+      const maxVal = Math.max(...float32Audio.map(Math.abs));
+      if (maxVal <= 1.0 && maxVal > 0) {
+        console.log(`🎤 Processing VAD audio: ${float32Audio.length} samples`);
+      } else {
+        throw new Error('Not Float32Array audio data');
+      }
+    } catch (error) {
+      // Fall back to treating as WebM/binary audio data
+      console.log(`🎵 Processing manual recording: ${chunk.length} bytes`);
+      // For now, we'll need the worker to handle WebM decoding
+      // or convert it to Float32Array format
+      const id = crypto.randomUUID();
+      console.log(`📤 Sending manual recording to worker: ${id}`);
+      audioWorker.postMessage({
+        type: 'process-webm-audio',
+        id,
+        audioData: chunk,
+      });
+      return;
+    }
+  } else {
+    // Definitely not Float32Array, treat as binary audio
+    console.log(`🎵 Processing manual recording: ${chunk.length} bytes`);
+    const id = crypto.randomUUID();
+    console.log(`📤 Sending manual recording to worker: ${id}`);
+    audioWorker.postMessage({
+      type: 'process-webm-audio',
+      id,
+      audioData: chunk,
+    });
+    return;
+  }
+
+  // Check if audio has actual content (not just silence)
+  const maxAmplitude = Math.max(...float32Audio.map(Math.abs));
+  if (maxAmplitude < 0.01) {
+    console.log('🔇 Audio segment too quiet, skipping transcription');
+    return;
+  }
+
+  // Send Float32Array audio data to worker for transcription
   const id = crypto.randomUUID();
-  console.log(`📤 Sending audio to worker: ${id}`);
+  console.log(`📤 Sending speech to worker: ${id}`);
   audioWorker.postMessage({
     type: 'process-audio',
     id,
@@ -212,33 +206,34 @@ function processAudioChunk(ws: ServerWebSocket, chunk: Buffer) {
   });
 }
 
-// Audio utilities
-const convertToFloat32 = (buffer: Buffer) => {
-  // Ensure buffer length is even (for 16-bit samples)
-  const length = Math.floor(buffer.length / 2);
-  const int16Array = new Int16Array(length);
-
-  // Manually read 16-bit values from buffer
-  for (let i = 0; i < length; i++) {
-    int16Array[i] = buffer.readInt16LE(i * 2);
-  }
-
-  return new Float32Array(int16Array.map((v) => v / 32768.0));
-};
-
+// Health check endpoint
 app.get('/api/health', (c) => {
   return c.json({
-    status: 'ok',
+    status: 'healthy',
     timestamp: new Date().toISOString(),
-    workerReady,
-    audioWorkerActive: audioWorker !== null,
+    services: {
+      worker: {
+        ready: workerReady,
+        active: audioWorker !== null,
+      },
+      websocket: {
+        active: server !== null,
+      },
+    },
+    version: '2.0.0',
   });
 });
 
 // Manual transcription endpoint (for testing)
 app.post('/api/transcribe', async (c) => {
   if (!audioWorker || !workerReady) {
-    return c.json({ error: 'Audio worker not ready' }, 503);
+    return c.json(
+      { 
+        error: 'Audio worker not ready',
+        timestamp: new Date().toISOString() 
+      }, 
+      503
+    );
   }
 
   try {
@@ -256,16 +251,26 @@ app.post('/api/transcribe', async (c) => {
     return c.json({
       message: 'Transcription request sent',
       id,
+      timestamp: new Date().toISOString(),
     });
   } catch (error) {
-    return c.json({ error: 'Invalid request' }, 400);
+    return c.json(
+      { 
+        error: 'Invalid request format',
+        timestamp: new Date().toISOString() 
+      }, 
+      400
+    );
   }
 });
 
 // Initialize and start server
 async function startServer() {
   try {
+    console.log('🚀 Starting Voice Agent Server...');
+    
     // Initialize audio worker first
+    console.log('🔄 Initializing audio worker...');
     await initializeWorker();
 
     // Start the server
@@ -275,19 +280,34 @@ async function startServer() {
       websocket,
     });
 
-    console.log(`🚀 Server running at http://localhost:3000`);
-    console.log(`🎤 Audio worker ready for voice processing`);
+    console.log(`🌟 Voice Agent Server running at http://localhost:3000`);
+    console.log(`🎤 Audio worker ready for speech-to-text processing`);
+    console.log(`📡 WebSocket endpoint: ws://localhost:3000/ws`);
   } catch (error) {
-    console.error('Failed to start server:', error);
+    console.error('💥 Failed to start server:', error);
     process.exit(1);
   }
 }
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
-  console.log('Shutting down gracefully...');
+  console.log('🛑 Shutting down gracefully...');
   if (audioWorker) {
     audioWorker.terminate();
+  }
+  if (server) {
+    server.stop();
+  }
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('🛑 Received SIGINT, shutting down gracefully...');
+  if (audioWorker) {
+    audioWorker.terminate();
+  }
+  if (server) {
+    server.stop();
   }
   process.exit(0);
 });
