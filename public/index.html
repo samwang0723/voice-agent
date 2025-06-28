@@ -1,0 +1,22 @@
+<script>
+  const ws = new WebSocket('ws://localhost:3000/ws');
+
+  navigator.mediaDevices.getUserMedia({ audio: true }).then((stream) => {
+    const recorder = new MediaRecorder(stream, {
+      mimeType: 'audio/webm;codecs=opus',
+      audioBitsPerSecond: 16000,
+    });
+
+    recorder.ondataavailable = (e) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(e.data);
+      }
+    };
+
+    recorder.start(200); // 200ms chunks
+  });
+
+  ws.onmessage = (event) => {
+    console.log('Transcription:', event.data);
+  };
+</script>
