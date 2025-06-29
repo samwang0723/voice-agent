@@ -123,8 +123,8 @@ app.get(
       // Send welcome message
       ws.send(
         JSON.stringify({
-          type: 'connected',
-          message: 'Voice agent ready for speech processing',
+          type: 'agent',
+          message: 'Hello! how may I assist you today?',
           workerReady,
           timestamp: new Date().toISOString(),
         })

@@ -65,7 +65,6 @@ function addMessage(content, type = 'info') {
 async function checkAndAutoStartListening() {
   if (isConnected && isVadReady && !isListening) {
     console.log('Both WebSocket and VAD ready - auto-starting listening');
-    addMessage('Auto-starting voice detection...', 'system');
     await startListening(true);
   }
 }
@@ -89,12 +88,6 @@ async function startListening(isAutoStart = false) {
     console.log('Starting VAD...');
     await vadInstance.start();
     isListening = true;
-
-    if (isAutoStart) {
-      addMessage('Voice detection started automatically', 'system');
-    } else {
-      addMessage('Voice detection started manually', 'system');
-    }
 
     updateStatus(isConnected);
     return true;
@@ -157,7 +150,7 @@ function connectWebSocket() {
 
   ws.onopen = async () => {
     console.log('WebSocket connected');
-    addMessage('Connected to voice agent', 'system');
+    addMessage('Connected to websocket', 'system');
     updateStatus(true);
     isUserDisconnected = false; // Reset flag when successfully connected
 
@@ -175,6 +168,9 @@ function connectWebSocket() {
           break;
         case 'transcript':
           addMessage(`${data.transcript}`, 'transcript');
+          break;
+        case 'agent':
+          addMessage(`${data.message}`, 'agent');
           break;
         case 'error':
           addMessage(`${data.message}`, 'error');
@@ -286,8 +282,6 @@ async function initializeVAD() {
     for (const config of vadConfigs) {
       try {
         console.log(`Trying VAD with ${config.model} model...`);
-        addMessage(`Trying ${config.model} model...`, 'system');
-
         vadInstance = await vad.MicVAD.new({
           onSpeechStart: () => {
             console.log('Speech started');
@@ -330,7 +324,6 @@ async function initializeVAD() {
           `Failed to initialize with ${config.model} model:`,
           modelError
         );
-        addMessage(`${config.model} model failed, trying next...`, 'system');
         continue;
       }
     }
@@ -439,23 +432,15 @@ async function initializeApp() {
 
   while (initAttempts < maxAttempts && !vadInstance) {
     initAttempts++;
-    addMessage(
-      `Initialization attempt ${initAttempts}/${maxAttempts}`,
-      'system'
-    );
     await initializeVAD();
 
     if (!vadInstance && initAttempts < maxAttempts) {
-      addMessage('Waiting before retry...', 'system');
       await new Promise((resolve) => setTimeout(resolve, 2000));
     }
   }
 
   if (vadInstance) {
-    addMessage(
-      'Ready! Voice detection will start automatically when connected',
-      'system'
-    );
+    addMessage('Voice detection ready', 'system');
   } else {
     addMessage(
       'Failed to initialize voice detection after all attempts',
