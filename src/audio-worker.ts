@@ -31,7 +31,7 @@ interface InitMessage {
 
 interface AudioTranscribeMessage {
   type: 'transcribe-audio';
-  id: string;
+  sessionId: string;
   audioData: Float32Array;
   context?: {
     datetime: string;
@@ -43,7 +43,7 @@ type WorkerMessage = AudioTranscribeMessage | InitMessage;
 
 interface SpeechEndResponse {
   type: 'speech-end';
-  id: string;
+  sessionId: string;
   transcript: string;
   aiResponse: string;
   speechAudio?: ArrayBuffer; // TTS audio data
@@ -57,7 +57,7 @@ interface InitResponse {
 
 interface ErrorResponse {
   type: 'error';
-  id: string;
+  sessionId: string;
   error: string;
 }
 
@@ -301,94 +301,118 @@ async function generateSpeechFromText(
 // @ts-ignore - Bun worker global
 self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
   const message = event.data;
+  // logger.debug(`Worker received message: ${message.type}`);
 
   try {
     switch (message.type) {
-      case 'init': {
+      case 'init':
         sampleRate = message.sampleRate;
-        logger.info(`🎤 Worker initialized with sample rate: ${sampleRate}`);
-        break;
-      }
-
-      case 'transcribe-audio': {
-        // Step 1: Transcribe the audio
-        const transcript = await transcribeWithWhisper(message.audioData);
-
-        if (transcript.startsWith('[') && transcript.endsWith(']')) {
-          // Transcription failed, send error response
+        try {
+          aiModel = createModelByKey('gemini-2.5-flash'); // or 'openai' based on config
+          logger.debug(
+            `Worker initialized with sample rate: ${sampleRate} and AI model`
+          );
+          sendMessage({ type: 'init-complete', success: true });
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : 'Unknown error';
+          logger.error('Worker initialization failed:', errorMessage);
           sendMessage({
-            type: 'speech-end',
-            id: message.id,
-            transcript,
-            aiResponse: '[Cannot generate response without valid transcript]',
+            type: 'init-complete',
+            success: false,
+            error: errorMessage,
           });
-          return;
         }
+        break;
 
-        // Step 2: Generate AI response with context
-        const aiResponse = await generateAIResponse(
-          transcript,
+      case 'transcribe-audio':
+        await transcribeAndProcess(
+          message.sessionId,
+          message.audioData,
           message.context
         );
-
-        // Step 3: Generate speech from AI response
-        let speechAudio: ArrayBuffer | undefined;
-        if (aiResponse && !aiResponse.startsWith('[')) {
-          const audioBuffer = await generateSpeechFromText(aiResponse);
-          if (audioBuffer) {
-            speechAudio = audioBuffer;
-          }
-        }
-
-        // Step 4: Add to conversation history (store original transcript, not enhanced)
-        addToHistory('user', transcript);
-        if (!aiResponse.startsWith('[') || !aiResponse.endsWith(']')) {
-          // Only add successful AI responses to history
-          addToHistory('assistant', aiResponse);
-        }
-
-        // Step 5: Send response to frontend (including speech audio if available)
-        sendMessage({
-          type: 'speech-end',
-          id: message.id,
-          transcript,
-          aiResponse,
-          speechAudio,
-        });
         break;
-      }
-
-      default:
-        // This is a type error and should not happen with TypeScript
-        logger.warn('Unknown message type:', (message as any)?.type);
     }
   } catch (error) {
-    sendMessage({
-      type: 'error',
-      id: 'id' in message ? message.id : 'unknown',
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
+    logger.error('Error in worker message handler:', error);
+
+    // Check if it's a transcription message to send a specific error
+    if (message.type === 'transcribe-audio') {
+      const errorMessage =
+        error instanceof Error ? error.message : 'Unknown processing error';
+      sendMessage({
+        type: 'error',
+        sessionId: message.sessionId,
+        error: errorMessage,
+      });
+    }
   }
 };
 
-// Initialize AI model and signal that the worker is ready
-try {
-  aiModel = createModelByKey('gemini-2.5-flash');
-  logger.info('✅ AI model (gemini-2.5-flash) initialized successfully');
+// Transcribe audio, generate response, and send back to main thread
+async function transcribeAndProcess(
+  sessionId: string,
+  audioData: Float32Array,
+  context?: { datetime: string; location?: string }
+) {
+  try {
+    // Step 1: Transcribe audio to text
+    const transcript = await transcribeWithWhisper(audioData);
+    logger.debug(`Transcription result: "${transcript}"`);
 
-  sendMessage({
-    type: 'init-complete',
-    success: true,
-  });
+    // Check if transcription produced a meaningful result
+    if (
+      !transcript ||
+      transcript.toLowerCase().startsWith('[') ||
+      transcript.trim().length < 2
+    ) {
+      logger.warn(
+        `Skipping AI response due to empty or non-meaningful transcript: "${transcript}"`
+      );
+      // Even if we don't generate an AI response, we can send the transcript back
+      sendMessage({
+        type: 'speech-end',
+        sessionId,
+        transcript,
+        aiResponse: '',
+      });
+      return;
+    }
 
-  logger.info('✅ Audio worker ready for transcription and AI responses.');
-} catch (error) {
-  logger.error('❌ Failed to initialize AI model:', error);
+    // Add user's transcribed message to history
+    addToHistory('user', transcript);
 
-  sendMessage({
-    type: 'init-complete',
-    success: false,
-    error:
-      error instanceof Error ? error.message : 'Failed to initialize AI model',
-  });
+    // Step 2: Generate AI response
+    const aiResponse = await generateAIResponse(transcript, context);
+    logger.debug(`AI response: "${aiResponse}"`);
+
+    // Add AI's response to history
+    addToHistory('assistant', aiResponse);
+
+    // Step 3: Generate TTS for the AI response
+    const speechAudioNullable = await generateSpeechFromText(aiResponse);
+    const speechAudio =
+      speechAudioNullable === null ? undefined : speechAudioNullable;
+
+    // Step 4: Send all results back to the main thread
+    sendMessage({
+      type: 'speech-end',
+      sessionId,
+      transcript,
+      aiResponse,
+      speechAudio,
+    });
+  } catch (error) {
+    logger.error('Error during transcription and processing:', error);
+
+    const errorMessage =
+      error instanceof Error ? error.message : 'Unknown transcription error';
+
+    // Send error message back to main thread
+    sendMessage({
+      type: 'error',
+      sessionId,
+      error: errorMessage,
+    });
+  }
 }

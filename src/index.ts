@@ -3,6 +3,7 @@ import { createBunWebSocket } from 'hono/bun';
 import { serveStatic } from 'hono/bun';
 import type { ServerWebSocket } from 'bun';
 import logger from './logger';
+import { randomUUID } from 'crypto';
 
 const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>();
 const app = new Hono();
@@ -10,7 +11,12 @@ const app = new Hono();
 // Serve static files
 app.use('/*', serveStatic({ root: './public' }));
 
-const topic = 'voice-stream';
+// Map to store sessions
+interface SessionData {
+  ws: ServerWebSocket;
+  context?: any;
+}
+const sessions = new Map<string, SessionData>();
 
 // Worker instance for audio processing
 let audioWorker: Worker | null = null;
@@ -20,6 +26,7 @@ let workerReady = false;
 // Worker message types (matching worker file)
 interface WorkerResponse {
   type: 'speech-end' | 'init-complete' | 'error';
+  sessionId?: string;
   id?: string;
   transcript?: string;
   aiResponse?: string;
@@ -36,6 +43,16 @@ function initializeWorker(): Promise<void> {
 
       audioWorker.onmessage = (event: MessageEvent<WorkerResponse>) => {
         const message = event.data;
+        const session = message.sessionId
+          ? sessions.get(message.sessionId)
+          : undefined;
+
+        if (!session && message.type !== 'init-complete') {
+          logger.warn(
+            `⚠️ Received worker message for unknown or missing session ID: ${message.sessionId}`
+          );
+          return;
+        }
 
         switch (message.type) {
           case 'init-complete':
@@ -53,9 +70,9 @@ function initializeWorker(): Promise<void> {
 
           case 'speech-end':
             logger.debug(
-              `🎤 Speech processed, transcript: "${message.transcript}"`
+              `🎤 Speech processed for session ${message.sessionId}, transcript: "${message.transcript}"`
             );
-            if (message.transcript && server) {
+            if (message.transcript && session) {
               // Send transcript message
               const transcriptMessage = {
                 type: 'transcript',
@@ -63,9 +80,11 @@ function initializeWorker(): Promise<void> {
                 timestamp: new Date().toISOString(),
               };
               logger.debug(
-                `📢 Broadcasting transcript: ${JSON.stringify(transcriptMessage)}`
+                `📢 Sending transcript to session ${message.sessionId}: ${JSON.stringify(
+                  transcriptMessage
+                )}`
               );
-              server.publish(topic, JSON.stringify(transcriptMessage));
+              session.ws.send(JSON.stringify(transcriptMessage));
 
               // Send AI response message if available
               if (message.aiResponse) {
@@ -78,30 +97,37 @@ function initializeWorker(): Promise<void> {
                   timestamp: new Date().toISOString(),
                 };
                 logger.debug(
-                  `🤖 Broadcasting AI response: ${JSON.stringify({ ...aiMessage, speechAudio: aiMessage.speechAudio ? `[${Buffer.from(message.speechAudio!).length} bytes]` : undefined })}`
+                  `🤖 Broadcasting AI response to session ${message.sessionId}`
                 );
-                logger.info(`🤖 AI Response content: "${message.aiResponse}"`);
+                logger.info(
+                  `🤖 AI Response content for session ${message.sessionId}: "${message.aiResponse}"`
+                );
                 if (message.speechAudio) {
                   logger.debug(
-                    `🎵 TTS Audio size: ${message.speechAudio.byteLength} bytes`
+                    `🎵 TTS Audio size for session ${message.sessionId}: ${message.speechAudio.byteLength} bytes`
                   );
                 }
-                server.publish(topic, JSON.stringify(aiMessage));
+                session.ws.send(JSON.stringify(aiMessage));
               }
             } else {
-              logger.warn('⚠️ No transcript generated from audio');
+              logger.warn(
+                `⚠️ No transcript generated from audio for session ${message.sessionId}`
+              );
             }
             break;
 
           case 'error':
-            logger.error('❌ Worker error:', message.error);
-            if (server) {
+            logger.error(
+              `❌ Worker error for session ${message.sessionId}:`,
+              message.error
+            );
+            if (session) {
               const errorMessage = {
                 type: 'error',
                 message: message.error,
                 timestamp: new Date().toISOString(),
               };
-              server.publish(topic, JSON.stringify(errorMessage));
+              session.ws.send(JSON.stringify(errorMessage));
             }
             break;
 
@@ -129,9 +155,18 @@ function initializeWorker(): Promise<void> {
 // WebSocket endpoint
 app.get(
   '/ws',
-  upgradeWebSocket((_) => ({
+  upgradeWebSocket((c) => ({
     onMessage(event, ws) {
-      const rawWs = ws.raw as ServerWebSocket;
+      const rawWs = ws.raw as ServerWebSocket & { sessionId: string };
+      const sessionId = rawWs.sessionId;
+      const session = sessions.get(sessionId);
+
+      if (!session) {
+        logger.error(
+          `⚠️ Received message for unknown session ID: ${sessionId}`
+        );
+        return;
+      }
 
       // Handle both binary audio data and JSON context messages
       if (typeof event.data === 'string') {
@@ -139,12 +174,18 @@ app.get(
           const contextData = JSON.parse(event.data);
           if (contextData.type === 'audio-context') {
             // Store context for the next audio chunk
-            (rawWs as any).audioContext = contextData.context;
-            logger.info('📍 Received audio context:', contextData.context);
+            session.context = contextData.context;
+            logger.info(
+              `📍 Received audio context for session ${sessionId}:`,
+              contextData.context
+            );
             return;
           }
         } catch (e) {
-          logger.warn('⚠️ Invalid JSON message:', event.data);
+          logger.warn(
+            `⚠️ Invalid JSON message from session ${sessionId}:`,
+            event.data
+          );
           return;
         }
       }
@@ -156,15 +197,20 @@ app.get(
       }
 
       const audioBuffer = Buffer.from(event.data as ArrayBuffer);
-      logger.debug(`🎵 Received speech segment: ${audioBuffer.length} bytes`);
+      logger.debug(
+        `🎵 Received speech segment from session ${sessionId}: ${audioBuffer.length} bytes`
+      );
 
       // Get stored context (if any)
-      const context = (rawWs as any).audioContext || null;
-      processSpeechSegment(rawWs, audioBuffer, context);
+      processSpeechSegment(sessionId, audioBuffer, session.context);
     },
-    onOpen(_, ws) {
-      (ws.raw as ServerWebSocket).subscribe(topic);
-      logger.info('🔌 WebSocket connection opened');
+    onOpen(event, ws) {
+      const rawWs = ws.raw as ServerWebSocket & { sessionId: string };
+      const sessionId = randomUUID();
+      rawWs.sessionId = sessionId;
+      sessions.set(sessionId, { ws: rawWs });
+
+      logger.info(`🔌 WebSocket connection opened, session ID: ${sessionId}`);
 
       // Send welcome message
       ws.send(
@@ -176,15 +222,30 @@ app.get(
         })
       );
     },
-    onClose(_, ws) {
-      (ws.raw as ServerWebSocket).unsubscribe(topic);
-      logger.info('🔌 WebSocket connection closed');
+    onClose(event, ws) {
+      const rawWs = ws.raw as ServerWebSocket & { sessionId: string };
+      const sessionId = rawWs.sessionId;
+      if (sessionId) {
+        sessions.delete(sessionId);
+        logger.info(`🔌 WebSocket connection closed, session ID: ${sessionId}`);
+      }
+    },
+    onError(event: Event, ws) {
+      const rawWs = ws.raw as ServerWebSocket & { sessionId: string };
+      const sessionId = rawWs.sessionId;
+      if (sessionId) {
+        sessions.delete(sessionId);
+        logger.error(
+          `🔌 WebSocket error for session ${sessionId}:`,
+          (event as ErrorEvent).error
+        );
+      }
     },
   }))
 );
 
 function processSpeechSegment(
-  ws: ServerWebSocket,
+  sessionId: string,
   chunk: Buffer,
   context: any = null
 ) {
@@ -204,25 +265,29 @@ function processSpeechSegment(
   // Quick validation: check if audio has actual content (not just silence)
   const maxAmplitude = Math.max(...float32Audio.map(Math.abs));
   if (maxAmplitude < 0.01) {
-    logger.debug('🔇 Audio segment too quiet, skipping transcription');
+    logger.debug(
+      `🔇 Audio segment from session ${sessionId} too quiet, skipping transcription`
+    );
     return;
   }
 
   // Send audio data to worker for transcription
-  const id = crypto.randomUUID();
   logger.debug(
-    `📤 Sending speech to worker for transcription: ${float32Audio.length} samples`
+    `📤 Sending speech to worker for transcription from session ${sessionId}: ${float32Audio.length} samples`
   );
 
   const message = {
     type: 'transcribe-audio',
-    id,
+    sessionId,
     audioData: float32Audio,
     context,
   };
 
   if (context) {
-    logger.debug('📍 Including context in worker message:', context);
+    logger.debug(
+      `📍 Including context in worker message for session ${sessionId}:`,
+      context
+    );
   }
 
   audioWorker.postMessage(message);
