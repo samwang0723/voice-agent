@@ -143,64 +143,28 @@ function processSpeechSegment(ws: ServerWebSocket, chunk: Buffer) {
     return;
   }
 
-  let float32Audio: Float32Array;
-  
-  // Detect if this is Float32Array data (from VAD) or WebM audio (from manual recording)
-  if (chunk.length % 4 === 0 && chunk.length >= 16) {
-    // Try to process as Float32Array first (VAD data)
-    try {
-      float32Audio = new Float32Array(
-        chunk.buffer,
-        chunk.byteOffset,
-        chunk.length / 4
-      );
-      
-      // Quick validation - check if values are in reasonable range for audio
-      const maxVal = Math.max(...float32Audio.map(Math.abs));
-      if (maxVal <= 1.0 && maxVal > 0) {
-        console.log(`🎤 Processing VAD audio: ${float32Audio.length} samples`);
-      } else {
-        throw new Error('Not Float32Array audio data');
-      }
-    } catch (error) {
-      // Fall back to treating as WebM/binary audio data
-      console.log(`🎵 Processing manual recording: ${chunk.length} bytes`);
-      // For now, we'll need the worker to handle WebM decoding
-      // or convert it to Float32Array format
-      const id = crypto.randomUUID();
-      console.log(`📤 Sending manual recording to worker: ${id}`);
-      audioWorker.postMessage({
-        type: 'process-webm-audio',
-        id,
-        audioData: chunk,
-      });
-      return;
-    }
-  } else {
-    // Definitely not Float32Array, treat as binary audio
-    console.log(`🎵 Processing manual recording: ${chunk.length} bytes`);
-    const id = crypto.randomUUID();
-    console.log(`📤 Sending manual recording to worker: ${id}`);
-    audioWorker.postMessage({
-      type: 'process-webm-audio',
-      id,
-      audioData: chunk,
-    });
-    return;
-  }
+  // The frontend now sends complete Float32Array segments.
+  // We assume the data is in this format.
+  const float32Audio = new Float32Array(
+    chunk.buffer,
+    chunk.byteOffset,
+    chunk.length / 4
+  );
 
-  // Check if audio has actual content (not just silence)
+  // Quick validation: check if audio has actual content (not just silence)
   const maxAmplitude = Math.max(...float32Audio.map(Math.abs));
   if (maxAmplitude < 0.01) {
     console.log('🔇 Audio segment too quiet, skipping transcription');
     return;
   }
 
-  // Send Float32Array audio data to worker for transcription
+  // Send audio data to worker for transcription
   const id = crypto.randomUUID();
-  console.log(`📤 Sending speech to worker: ${id}`);
+  console.log(
+    `📤 Sending speech to worker for transcription: ${float32Audio.length} samples`
+  );
   audioWorker.postMessage({
-    type: 'process-audio',
+    type: 'transcribe-audio',
     id,
     audioData: float32Audio,
   });
@@ -243,7 +207,7 @@ app.post('/api/transcribe', async (c) => {
     // Send transcription request to worker
     const id = crypto.randomUUID();
     audioWorker.postMessage({
-      type: 'transcribe',
+      type: 'transcribe-audio',
       id,
       audioData,
     });

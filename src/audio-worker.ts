@@ -1,4 +1,3 @@
-import { RealTimeVAD } from '@ericedouard/vad-node-realtime';
 import Groq from 'groq-sdk';
 
 // Initialize Groq client
@@ -7,24 +6,13 @@ const groq = new Groq({
 });
 
 // Worker message types
-interface AudioProcessMessage {
-  type: 'process-audio';
+interface AudioTranscribeMessage {
+  type: 'transcribe-audio';
   id: string;
   audioData: Float32Array;
 }
 
-interface TranscribeMessage {
-  type: 'transcribe';
-  id: string;
-  audioData: Float32Array;
-}
-
-interface InitMessage {
-  type: 'init';
-  sampleRate: number;
-}
-
-type WorkerMessage = AudioProcessMessage | TranscribeMessage | InitMessage;
+type WorkerMessage = AudioTranscribeMessage;
 
 interface SpeechEndResponse {
   type: 'speech-end';
@@ -46,145 +34,10 @@ interface ErrorResponse {
 
 type WorkerResponse = SpeechEndResponse | InitResponse | ErrorResponse;
 
-// Global VAD instance
-let vad: RealTimeVAD | null = null;
-
-// Fallback speech detection
-let audioBuffer: Float32Array[] = [];
-let lastSpeechTime = 0;
-let speechDetectionTimer: any = null;
-const SPEECH_TIMEOUT = 3000; // 3 seconds of silence triggers transcription
-const MAX_BUFFER_SIZE = 160000; // Max ~10 seconds at 16kHz
-
 // Send message back to main thread
 function sendMessage(message: WorkerResponse) {
   // @ts-ignore - Bun worker global
   self.postMessage(message);
-}
-
-// Initialize VAD
-async function initializeVAD(sampleRate: number): Promise<void> {
-  try {
-    vad = await RealTimeVAD.new({
-      sampleRate,
-      // Reduce VAD sensitivity for better speech detection
-      positiveSpeechThreshold: 0.6, // Lower threshold (default: 0.8)
-      negativeSpeechThreshold: 0.35, // Lower threshold (default: 0.5)
-      redemptionFrames: 3, // Fewer frames to wait (default: 8)
-      frameSamples: 512, // Smaller frame size for faster detection
-      preSpeechPadFrames: 2, // Fewer padding frames
-      onSpeechEnd: async (audio: Float32Array) => {
-        console.log(
-          `🗣️ Speech ended, processing ${audio.length} samples for transcription`
-        );
-        const transcript = await transcribeWithWhisper(audio);
-        console.log(`📝 Transcription result: "${transcript}"`);
-        // Send transcription result back to main thread
-        sendMessage({
-          type: 'speech-end',
-          id: 'speech-detection', // We could make this more specific if needed
-          transcript,
-        });
-      },
-      onSpeechStart: () => {
-        console.log('🎤 Speech started detected by VAD');
-      },
-    });
-
-    sendMessage({
-      type: 'init-complete',
-      success: true,
-    });
-  } catch (error) {
-    sendMessage({
-      type: 'init-complete',
-      success: false,
-      error: error instanceof Error ? error.message : 'Unknown error',
-    });
-  }
-}
-
-// Process audio chunk through VAD
-function processAudioChunk(audioData: Float32Array): void {
-  if (!vad) {
-    throw new Error('VAD not initialized');
-  }
-
-  const maxAmplitude = Math.max(...audioData);
-  console.log(
-    `🔊 Worker processing audio: ${audioData.length} samples, max: ${maxAmplitude}`
-  );
-
-  // Run primary VAD
-  vad.processAudio(audioData);
-
-  // Fallback speech detection
-  const currentTime = Date.now();
-  const hasSpeech = maxAmplitude > 0.005; // Adjust threshold as needed
-
-  if (hasSpeech) {
-    lastSpeechTime = currentTime;
-    audioBuffer.push(new Float32Array(audioData));
-    console.log(
-      `🎙️ Speech detected (fallback), buffer size: ${audioBuffer.length} chunks`
-    );
-
-    // Clear existing timer
-    if (speechDetectionTimer) {
-      clearTimeout(speechDetectionTimer);
-    }
-
-    // Set new timer for speech end detection
-    speechDetectionTimer = setTimeout(() => {
-      if (audioBuffer.length > 0) {
-        console.log(
-          `⏰ Speech timeout reached, transcribing ${audioBuffer.length} chunks`
-        );
-        transcribeBufferedAudio();
-      }
-    }, SPEECH_TIMEOUT);
-
-    // Prevent buffer from getting too large
-    if (audioBuffer.length > MAX_BUFFER_SIZE / 128) {
-      console.log(`📦 Buffer full, forcing transcription`);
-      transcribeBufferedAudio();
-    }
-  }
-}
-
-// Transcribe buffered audio (fallback method)
-async function transcribeBufferedAudio(): Promise<void> {
-  if (audioBuffer.length === 0) return;
-
-  // Concatenate all audio chunks
-  const totalLength = audioBuffer.reduce((sum, chunk) => sum + chunk.length, 0);
-  const combinedAudio = new Float32Array(totalLength);
-  let offset = 0;
-
-  for (const chunk of audioBuffer) {
-    combinedAudio.set(chunk, offset);
-    offset += chunk.length;
-  }
-
-  console.log(`🔗 Transcribing ${totalLength} samples from fallback detection`);
-
-  // Clear buffer
-  audioBuffer = [];
-  if (speechDetectionTimer) {
-    clearTimeout(speechDetectionTimer);
-    speechDetectionTimer = null;
-  }
-
-  // Transcribe
-  const transcript = await transcribeWithWhisper(combinedAudio);
-  console.log(`📝 Fallback transcription result: "${transcript}"`);
-
-  // Send result
-  sendMessage({
-    type: 'speech-end',
-    id: 'fallback-detection',
-    transcript,
-  });
 }
 
 // Convert Float32Array to WAV buffer
@@ -286,15 +139,7 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 
   try {
     switch (message.type) {
-      case 'init':
-        await initializeVAD(message.sampleRate);
-        break;
-
-      case 'process-audio':
-        processAudioChunk(message.audioData);
-        break;
-
-      case 'transcribe':
+      case 'transcribe-audio':
         const transcript = await transcribeWithWhisper(message.audioData);
         sendMessage({
           type: 'speech-end',
@@ -304,7 +149,8 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         break;
 
       default:
-        console.warn('Unknown message type:', message);
+        // This is a type error and should not happen with TypeScript
+        console.warn('Unknown message type:', (message as any)?.type);
     }
   } catch (error) {
     sendMessage({
@@ -315,4 +161,10 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
   }
 };
 
-console.log('Audio worker initialized');
+// Signal that the worker is ready (no async initialization needed anymore)
+sendMessage({
+  type: 'init-complete',
+  success: true,
+});
+
+console.log('✅ Audio worker ready for transcription.');
