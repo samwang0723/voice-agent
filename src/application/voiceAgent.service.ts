@@ -1,7 +1,3 @@
-import type {
-  ITranscriptionService,
-  ITextToSpeechService,
-} from '../domain/audio/audio.service';
 import type { ILanguageModel } from '../domain/ai/ai.service';
 import type { IConversationRepository } from '../domain/conversation/conversation.repository';
 import {
@@ -10,11 +6,14 @@ import {
 } from '../domain/conversation/conversation.entity';
 import { pcmToWav } from '../infrastructure/audio/wav.util';
 import logger from '../infrastructure/logger';
+import {
+  getTranscriptionService,
+  getTextToSpeechService,
+} from '../domain/audio/audio.factory';
+import { transcriptionConfigs } from '../config';
 
 export class VoiceAgentService {
   constructor(
-    private readonly transcriptionService: ITranscriptionService,
-    private readonly ttsService: ITextToSpeechService,
     private readonly languageModel: ILanguageModel,
     private readonly conversationRepository: IConversationRepository
   ) {}
@@ -22,6 +21,8 @@ export class VoiceAgentService {
   public async processAudio(
     conversationId: string,
     audioChunk: Buffer,
+    sttEngine: string,
+    ttsEngine: string,
     context?: any
   ): Promise<{
     transcript: string;
@@ -35,11 +36,16 @@ export class VoiceAgentService {
       await this.conversationRepository.save(conversation);
     }
 
-    // 2. Convert audio to WAV
-    const wavBuffer = pcmToWav(audioChunk);
+    // 2. Transcribe audio
+    const sttConfig = transcriptionConfigs[sttEngine];
+    let audioBuffer = audioChunk;
+    if (sttConfig?.inputType === 'container') {
+      audioBuffer = pcmToWav(audioChunk);
+    }
 
-    // 3. Transcribe audio
-    const transcript = await this.transcriptionService.transcribe(wavBuffer);
+    // 3. Transcribe audio using the selected service
+    const transcriptionService = getTranscriptionService(sttEngine);
+    const transcript = await transcriptionService.transcribe(audioBuffer);
     logger.debug(`[${conversationId}] Transcript: "${transcript}"`);
     if (!transcript || transcript.startsWith('[')) {
       return {
@@ -59,8 +65,9 @@ export class VoiceAgentService {
     logger.debug(`[${conversationId}] AI Response: "${aiResponse}"`);
     conversation.addMessage(new Message('assistant', aiResponse));
 
-    // 5. Synthesize audio response
-    const audioResponse = await this.ttsService.synthesize(aiResponse);
+    // 5. Synthesize audio response using the selected service
+    const ttsService = getTextToSpeechService(ttsEngine);
+    const audioResponse = await ttsService.synthesize(aiResponse);
     logger.debug(
       `[${conversationId}] Synthesized audio response: ${
         audioResponse ? audioResponse.length : 0

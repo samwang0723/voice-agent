@@ -1,7 +1,6 @@
 import { Hono } from 'hono';
 import { serveStatic } from 'hono/bun';
 import { createBunWebSocket } from 'hono/bun';
-import type { WSContext } from 'hono/ws';
 import { randomUUID } from 'crypto';
 import type { WebSocketData } from '../websocket/websocket.handler';
 import { WebSocketHandler } from '../websocket/websocket.handler';

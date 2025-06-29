@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import logger from '../infrastructure/logger';
 
 export const serverConfig = {
@@ -6,7 +5,7 @@ export const serverConfig = {
   logLevel: process.env.LOG_LEVEL || 'info',
 };
 
-export type ModelProvider = 'anthropic' | 'openai' | 'google' | 'groq';
+export type ModelProvider = 'anthropic' | 'openai' | 'google' | 'groq' | 'cartesia';
 
 export interface ModelConfig {
   provider: ModelProvider;
@@ -17,6 +16,10 @@ export interface ModelConfig {
 
 export interface TranscriptionConfig extends ModelConfig {
   format?: 'wav' | 'webm';
+  language?: string;
+  encoding?: string;
+  sampleRate?: number;
+  inputType?: 'raw' | 'container';
 }
 
 // AI Model Configurations
@@ -45,15 +48,35 @@ export const transcriptionConfigs: Record<string, TranscriptionConfig> = {
     modelName: 'whisper-large-v3-turbo',
     apiKey: process.env.GROQ_API_KEY,
     format: (process.env.GROQ_TRANSCRIPTION_FORMAT as 'wav' | 'webm') || 'wav',
+    inputType: 'container',
+  },
+  cartesia: {
+    provider: 'cartesia',
+    modelName: 'ink-whisper',
+    apiKey: process.env.CARTESIA_API_KEY,
+    language: 'en',
+    encoding: 'pcm_s16le',
+    sampleRate: 16000,
+    inputType: 'raw',
   },
 };
 
+export interface TextToSpeechConfig extends ModelConfig {
+  voiceId?: string;
+}
+
 // Text-to-Speech Model Configurations
-export const ttsConfigs: Record<string, ModelConfig> = {
+export const ttsConfigs: Record<string, TextToSpeechConfig> = {
   groq: {
     provider: 'groq',
     modelName: 'playai-tts',
     apiKey: process.env.GROQ_API_KEY,
+  },
+  cartesia: {
+    provider: 'cartesia',
+    modelName: 'sonic-2',
+    apiKey: process.env.CARTESIA_API_KEY,
+    voiceId: process.env.CARTESIA_VOICE_ID,
   },
 };
 

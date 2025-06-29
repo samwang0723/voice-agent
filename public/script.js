@@ -17,6 +17,7 @@ const disconnectBtn = document.getElementById('disconnectBtn');
 const connectBtn = document.getElementById('connectBtn');
 const messagesEl = document.getElementById('messages');
 const messagesContainer = document.querySelector('.messages-container');
+const ttsEngineSelect = document.getElementById('tts-engine-select');
 
 // Configure ONNX Runtime for maximum browser compatibility
 function configureONNXRuntime() {
@@ -237,6 +238,19 @@ function connectWebSocket() {
   ws.onopen = async () => {
     console.log('WebSocket connected');
     addMessage('Connected to websocket', 'system');
+
+    // Send configuration to the server
+    const sttEngine = document.getElementById('stt-engine-select').value;
+    const ttsEngine = document.getElementById('tts-engine-select').value;
+    ws.send(
+      JSON.stringify({
+        type: 'config',
+        sttEngine,
+        ttsEngine,
+      })
+    );
+    addMessage(`Using STT: ${sttEngine}, TTS: ${ttsEngine}`, 'system');
+
     updateStatus(true);
     isUserDisconnected = false; // Reset flag when successfully connected
 
@@ -578,6 +592,31 @@ function setupEventListeners() {
   clearBtn.addEventListener('click', clearMessages);
   disconnectBtn.addEventListener('click', disconnect);
   connectBtn.addEventListener('click', connect);
+
+  // Add event listeners for engine selection changes
+  const sttEngineSelect = document.getElementById('stt-engine-select');
+  const ttsEngineSelect = document.getElementById('tts-engine-select');
+
+  const sendConfig = () => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      const sttEngine = sttEngineSelect.value;
+      const ttsEngine = ttsEngineSelect.value;
+      ws.send(
+        JSON.stringify({
+          type: 'config',
+          sttEngine,
+          ttsEngine,
+        })
+      );
+      addMessage(
+        `Configuration updated - STT: ${sttEngine}, TTS: ${ttsEngine}`,
+        'system'
+      );
+    }
+  };
+
+  sttEngineSelect.addEventListener('change', sendConfig);
+  ttsEngineSelect.addEventListener('change', sendConfig);
 }
 
 // Initialize everything when DOM is loaded

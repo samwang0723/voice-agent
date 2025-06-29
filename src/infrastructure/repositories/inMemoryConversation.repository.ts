@@ -1,7 +1,4 @@
-import {
-  Conversation,
-  Message,
-} from '../../domain/conversation/conversation.entity';
+import { Conversation } from '../../domain/conversation/conversation.entity';
 import type { IConversationRepository } from '../../domain/conversation/conversation.repository';
 
 export class InMemoryConversationRepository implements IConversationRepository {

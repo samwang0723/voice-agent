@@ -1,6 +1,4 @@
-import type { ServerWebSocket } from 'bun';
 import type { WSContext } from 'hono/ws';
-import { randomUUID } from 'crypto';
 import { VoiceAgentService } from '../../application/voiceAgent.service';
 import { Session } from '../../domain/session/session.entity';
 import type { ISessionRepository } from '../../domain/session/session.repository';
@@ -43,16 +41,26 @@ export class WebSocketHandler {
     if (typeof data === 'string') {
       try {
         const message = JSON.parse(data);
-        if (message.type === 'audio-context') {
-          const session = await this.sessionRepository.findById(sessionId);
-          if (session) {
-            session.context = message.context;
-            await this.sessionRepository.save(session);
-            logger.info(
-              `[${sessionId}] Updated session context:`,
-              message.context
-            );
-          }
+        const session = await this.sessionRepository.findById(sessionId);
+        if (!session) {
+          logger.warn(`[${sessionId}] Session not found for incoming message.`);
+          return;
+        }
+
+        if (message.type === 'config') {
+          session.sttEngine = message.sttEngine || 'groq';
+          session.ttsEngine = message.ttsEngine || 'groq';
+          await this.sessionRepository.save(session);
+          logger.info(
+            `[${sessionId}] Updated engines - STT: ${session.sttEngine}, TTS: ${session.ttsEngine}`
+          );
+        } else if (message.type === 'audio-context') {
+          session.context = message.context;
+          await this.sessionRepository.save(session);
+          logger.info(
+            `[${sessionId}] Updated session context:`,
+            message.context
+          );
         }
         return; // Context message handled, no further action needed
       } catch (error) {
@@ -80,13 +88,18 @@ export class WebSocketHandler {
 
     try {
       const session = await this.sessionRepository.findById(sessionId);
-      const context = session?.context;
+      if (!session) {
+        logger.error(`[${sessionId}] Session not found for audio processing.`);
+        return;
+      }
 
       const { transcript, aiResponse, audioResponse } =
         await this.voiceAgentService.processAudio(
           sessionId,
           audioBuffer,
-          context
+          session.sttEngine,
+          session.ttsEngine,
+          session.context
         );
 
       // Send transcript to client
