@@ -5,7 +5,8 @@ let isListening = false;
 let isConnected = false;
 let isUserDisconnected = false; // Track if user manually disconnected
 let isVadReady = false; // Track if VAD is initialized and ready
-let currentAudio = null; // Track currently playing TTS audio
+let audioContext = null;
+let currentAudioSource = null; // Use for Web Audio API source node
 let userLocation = null; // Cache user location
 let locationPermissionGranted = false;
 
@@ -151,12 +152,33 @@ function updateStatus(connected) {
   }
 }
 
-// Play TTS audio from base64 data
+// Play TTS audio from base64 data using Web Audio API
 async function playTTSAudio(base64AudioData) {
+  if (!audioContext) {
+    console.error('AudioContext not available.');
+    addMessage('Cannot play audio: AudioContext not initialized.', 'error');
+    return;
+  }
+
+  // Resume context if it's suspended (e.g., after long inactivity or on first play)
+  if (audioContext.state === 'suspended') {
+    try {
+      await audioContext.resume();
+      console.log('AudioContext resumed for playback.');
+    } catch (e) {
+      console.error('🎵 Failed to resume AudioContext:', e);
+      addMessage(
+        'Could not start audio. Please click the page to enable.',
+        'error'
+      );
+      return;
+    }
+  }
+
   try {
-    if (currentAudio) {
-      currentAudio.pause();
-      currentAudio = null;
+    if (currentAudioSource) {
+      currentAudioSource.stop();
+      currentAudioSource = null;
     }
 
     // Find the most recent agent message to add visual indicator
@@ -170,48 +192,36 @@ async function playTTSAudio(base64AudioData) {
       bytes[i] = binaryString.charCodeAt(i);
     }
 
-    // Create blob and object URL
-    const audioBlob = new Blob([bytes], { type: 'audio/wav' });
-    const audioUrl = URL.createObjectURL(audioBlob);
+    // Decode audio data using Web Audio API
+    const audioBuffer = await audioContext.decodeAudioData(bytes.buffer);
 
-    // Create and play audio
-    currentAudio = new Audio(audioUrl);
+    // Create and play audio source
+    currentAudioSource = audioContext.createBufferSource();
+    currentAudioSource.buffer = audioBuffer;
+    currentAudioSource.connect(audioContext.destination);
 
     // Add visual indicator when audio starts playing
     if (lastAgentMessage) {
       lastAgentMessage.classList.add('speaking');
     }
 
-    currentAudio.onended = () => {
-      URL.revokeObjectURL(audioUrl);
-      currentAudio = null;
+    currentAudioSource.onended = () => {
       // Remove visual indicator when audio ends
       if (lastAgentMessage) {
         lastAgentMessage.classList.remove('speaking');
       }
       console.log('🎵 TTS audio playback finished');
-    };
-
-    currentAudio.onerror = (error) => {
-      console.error('🎵 TTS audio playback error:', error);
-      URL.revokeObjectURL(audioUrl);
-      currentAudio = null;
-      // Remove visual indicator on error
-      if (lastAgentMessage) {
-        lastAgentMessage.classList.remove('speaking');
-      }
+      currentAudioSource = null;
     };
 
     console.log('🎵 Playing TTS audio...');
-    await currentAudio.play();
+    currentAudioSource.start();
   } catch (error) {
     console.error('🎵 Failed to play TTS audio:', error);
-    if (currentAudio) {
-      currentAudio = null;
-    }
-    // Remove visual indicator on exception
+    // Ensure visual indicator is removed on error
     const agentMessages = document.querySelectorAll('.message.agent.speaking');
     agentMessages.forEach((msg) => msg.classList.remove('speaking'));
+    currentAudioSource = null;
   }
 }
 
@@ -703,6 +713,7 @@ function setupEventListeners() {
 // Initialize everything when DOM is loaded
 window.addEventListener('DOMContentLoaded', () => {
   configureONNXRuntime();
+  initializeAudioContext();
   setupEventListeners();
 });
 
@@ -871,4 +882,36 @@ function getCurrentDateTime() {
     readable: now.toLocaleDateString('en-US', options),
     timestamp: now.getTime(),
   };
+}
+
+// Initialize the Web Audio API context
+function initializeAudioContext() {
+  try {
+    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioContext.state === 'suspended') {
+      addMessage('🔊 Click anywhere on the page to enable audio', 'system');
+      document.body.addEventListener('click', resumeAudioContext, {
+        once: true,
+      });
+      document.body.addEventListener('touchstart', resumeAudioContext, {
+        once: true,
+      });
+    }
+  } catch (e) {
+    console.error('Web Audio API is not supported in this browser.', e);
+    addMessage('Audio playback is not supported by your browser.', 'error');
+  }
+}
+
+// Resume AudioContext after a user gesture
+function resumeAudioContext() {
+  if (audioContext && audioContext.state === 'suspended') {
+    audioContext
+      .resume()
+      .then(() => {
+        console.log('AudioContext resumed successfully.');
+        addMessage('🔊 Audio enabled', 'system');
+      })
+      .catch((e) => console.error('Failed to resume AudioContext', e));
+  }
 }
