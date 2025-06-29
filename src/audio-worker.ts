@@ -25,6 +25,10 @@ interface AudioTranscribeMessage {
   type: 'transcribe-audio';
   id: string;
   audioData: Float32Array;
+  context?: {
+    datetime: string;
+    location?: string;
+  };
 }
 
 type WorkerMessage = AudioTranscribeMessage;
@@ -103,7 +107,7 @@ function float32ArrayToWav(
 async function transcribeWithWhisper(audio: Float32Array): Promise<string> {
   try {
     if (!process.env.GROQ_API_KEY) {
-      console.error('GROQ_API_KEY environment variable not set');
+      logger.error('GROQ_API_KEY environment variable not set');
       return '[API key not configured]';
     }
 
@@ -131,7 +135,7 @@ async function transcribeWithWhisper(audio: Float32Array): Promise<string> {
     const result = (transcription as any)?.text ?? transcription;
     return result || '[No transcription available]';
   } catch (error) {
-    console.error('Groq transcription failed:', error);
+    logger.error('Groq transcription failed:', error);
 
     // Provide more specific error messages
     if (error instanceof Error) {
@@ -150,11 +154,25 @@ async function transcribeWithWhisper(audio: Float32Array): Promise<string> {
 }
 
 // Generate AI response using the configured model
-async function generateAIResponse(userMessage: string): Promise<string> {
+async function generateAIResponse(
+  userMessage: string,
+  context?: { datetime: string; location?: string }
+): Promise<string> {
   try {
     if (!aiModel) {
-      console.error('AI model not initialized');
+      logger.error('AI model not initialized');
       return '[AI model not available]';
+    }
+
+    // Enhance user message with context if available
+    let enhancedUserMessage = userMessage;
+    if (context) {
+      let contextInfo = `[Context: ${context.datetime}`;
+      if (context.location) {
+        contextInfo += `, Location: ${context.location}`;
+      }
+      contextInfo += `]`;
+      enhancedUserMessage = `${userMessage}\n\n${contextInfo}`;
     }
 
     // Prepare messages for the conversation
@@ -162,17 +180,17 @@ async function generateAIResponse(userMessage: string): Promise<string> {
       {
         role: 'system' as const,
         content:
-          'You are a helpful voice assistant. Provide concise, natural responses suitable for voice interaction. Keep responses conversational and brief unless more detail is specifically requested.',
+          'You are a helpful voice assistant named Sandy. Provide concise, natural responses suitable for voice interaction. Keep responses conversational and brief unless more detail is specifically requested.',
       },
       // Include conversation history
       ...conversationHistory.map((msg) => ({
         role: msg.role as 'user' | 'assistant',
         content: msg.content,
       })),
-      // Add the current user message
+      // Add the current user message with context
       {
         role: 'user' as const,
-        content: userMessage,
+        content: enhancedUserMessage,
       },
     ];
 
@@ -183,11 +201,12 @@ async function generateAIResponse(userMessage: string): Promise<string> {
       maxTokens: 500, // Keep responses reasonably short for voice interaction
     });
 
-    logger.info(`🤖 history: ${JSON.stringify(messages)}`);
+    // logger.info(`🤖 history: ${JSON.stringify(messages)}`);
+    // logger.info(`🤖 result: ${JSON.stringify(result)}`);
 
     return result.text || '[No response generated]';
   } catch (error) {
-    console.error('AI response generation failed:', error);
+    logger.error('AI response generation failed:', error);
 
     if (error instanceof Error) {
       if (error.message.includes('401') || error.message.includes('api key')) {
@@ -224,13 +243,13 @@ async function generateSpeechFromText(
 ): Promise<ArrayBuffer | null> {
   try {
     if (!process.env.GROQ_API_KEY) {
-      console.error('GROQ_API_KEY environment variable not set for TTS');
+      logger.error('GROQ_API_KEY environment variable not set for TTS');
       return null;
     }
 
     // Skip TTS for error messages (those wrapped in brackets)
     if (text.startsWith('[') && text.endsWith(']')) {
-      console.log('Skipping TTS for error message');
+      logger.info('Skipping TTS for error message');
       return null;
     }
 
@@ -238,7 +257,7 @@ async function generateSpeechFromText(
     const truncatedText =
       text.length > 1000 ? text.substring(0, 1000) + '...' : text;
 
-    console.log(`🎵 Generating speech for: "${truncatedText}"`);
+    logger.info(`🎵 Generating speech for: "${truncatedText}"`);
 
     // Create speech using Groq TTS
     const response = await groq.audio.speech.create({
@@ -250,19 +269,19 @@ async function generateSpeechFromText(
 
     // Convert response to ArrayBuffer
     const audioBuffer = await response.arrayBuffer();
-    console.log(`🎵 Generated speech audio: ${audioBuffer.byteLength} bytes`);
+    logger.info(`🎵 Generated speech audio: ${audioBuffer.byteLength} bytes`);
 
     return audioBuffer;
   } catch (error) {
-    console.error('TTS generation failed:', error);
+    logger.error('TTS generation failed:', error);
 
     if (error instanceof Error) {
       if (error.message.includes('401')) {
-        console.error('TTS authentication failed - check API key');
+        logger.error('TTS authentication failed - check API key');
       } else if (error.message.includes('429')) {
-        console.error('TTS rate limit exceeded - try again later');
+        logger.error('TTS rate limit exceeded - try again later');
       } else if (error.message.includes('network')) {
-        console.error('TTS network error - check connection');
+        logger.error('TTS network error - check connection');
       }
     }
 
@@ -292,8 +311,11 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
           return;
         }
 
-        // Step 2: Generate AI response
-        const aiResponse = await generateAIResponse(transcript);
+        // Step 2: Generate AI response with context
+        const aiResponse = await generateAIResponse(
+          transcript,
+          message.context
+        );
 
         // Step 3: Generate speech from AI response
         let speechAudio: ArrayBuffer | undefined;
@@ -304,7 +326,7 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
           }
         }
 
-        // Step 4: Add to conversation history
+        // Step 4: Add to conversation history (store original transcript, not enhanced)
         addToHistory('user', transcript);
         if (!aiResponse.startsWith('[') || !aiResponse.endsWith(']')) {
           // Only add successful AI responses to history
@@ -324,7 +346,7 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 
       default:
         // This is a type error and should not happen with TypeScript
-        console.warn('Unknown message type:', (message as any)?.type);
+        logger.warn('Unknown message type:', (message as any)?.type);
     }
   } catch (error) {
     sendMessage({
@@ -338,16 +360,16 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 // Initialize AI model and signal that the worker is ready
 try {
   aiModel = createModelByKey('gemini-2.5-flash');
-  console.log('✅ AI model (gemini-2.5-flash) initialized successfully');
+  logger.info('✅ AI model (gemini-2.5-flash) initialized successfully');
 
   sendMessage({
     type: 'init-complete',
     success: true,
   });
 
-  console.log('✅ Audio worker ready for transcription and AI responses.');
+  logger.info('✅ Audio worker ready for transcription and AI responses.');
 } catch (error) {
-  console.error('❌ Failed to initialize AI model:', error);
+  logger.error('❌ Failed to initialize AI model:', error);
 
   sendMessage({
     type: 'init-complete',

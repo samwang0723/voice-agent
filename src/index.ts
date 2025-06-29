@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { createBunWebSocket } from 'hono/bun';
 import { serveStatic } from 'hono/bun';
 import type { ServerWebSocket } from 'bun';
+import logger from './logger';
 
 const { upgradeWebSocket, websocket } = createBunWebSocket<ServerWebSocket>();
 const app = new Hono();
@@ -40,10 +41,10 @@ function initializeWorker(): Promise<void> {
           case 'init-complete':
             if (message.success) {
               workerReady = true;
-              console.log('✅ Audio worker initialized successfully');
+              logger.debug('✅ Audio worker initialized successfully');
               resolve();
             } else {
-              console.error('❌ Worker initialization failed:', message.error);
+              logger.error('❌ Worker initialization failed:', message.error);
               reject(
                 new Error(message.error || 'Worker initialization failed')
               );
@@ -51,7 +52,7 @@ function initializeWorker(): Promise<void> {
             break;
 
           case 'speech-end':
-            console.log(
+            logger.debug(
               `🎤 Speech processed, transcript: "${message.transcript}"`
             );
             if (message.transcript && server) {
@@ -61,7 +62,7 @@ function initializeWorker(): Promise<void> {
                 transcript: message.transcript,
                 timestamp: new Date().toISOString(),
               };
-              console.log(
+              logger.debug(
                 `📢 Broadcasting transcript: ${JSON.stringify(transcriptMessage)}`
               );
               server.publish(topic, JSON.stringify(transcriptMessage));
@@ -76,24 +77,24 @@ function initializeWorker(): Promise<void> {
                     : undefined,
                   timestamp: new Date().toISOString(),
                 };
-                console.log(
+                logger.debug(
                   `🤖 Broadcasting AI response: ${JSON.stringify({ ...aiMessage, speechAudio: aiMessage.speechAudio ? `[${Buffer.from(message.speechAudio!).length} bytes]` : undefined })}`
                 );
-                console.log(`🤖 AI Response content: "${message.aiResponse}"`);
+                logger.info(`🤖 AI Response content: "${message.aiResponse}"`);
                 if (message.speechAudio) {
-                  console.log(
+                  logger.debug(
                     `🎵 TTS Audio size: ${message.speechAudio.byteLength} bytes`
                   );
                 }
                 server.publish(topic, JSON.stringify(aiMessage));
               }
             } else {
-              console.warn('⚠️ No transcript generated from audio');
+              logger.warn('⚠️ No transcript generated from audio');
             }
             break;
 
           case 'error':
-            console.error('❌ Worker error:', message.error);
+            logger.error('❌ Worker error:', message.error);
             if (server) {
               const errorMessage = {
                 type: 'error',
@@ -105,12 +106,12 @@ function initializeWorker(): Promise<void> {
             break;
 
           default:
-            console.warn('❓ Unknown worker message:', message);
+            logger.warn('❓ Unknown worker message:', message);
         }
       };
 
       audioWorker.onerror = (error) => {
-        console.error('❌ Worker error:', error);
+        logger.error('❌ Worker error:', error);
         reject(error);
       };
 
@@ -130,20 +131,40 @@ app.get(
   '/ws',
   upgradeWebSocket((_) => ({
     onMessage(event, ws) {
-      if (typeof event.data === 'string') return;
+      const rawWs = ws.raw as ServerWebSocket;
+
+      // Handle both binary audio data and JSON context messages
+      if (typeof event.data === 'string') {
+        try {
+          const contextData = JSON.parse(event.data);
+          if (contextData.type === 'audio-context') {
+            // Store context for the next audio chunk
+            (rawWs as any).audioContext = contextData.context;
+            logger.info('📍 Received audio context:', contextData.context);
+            return;
+          }
+        } catch (e) {
+          logger.warn('⚠️ Invalid JSON message:', event.data);
+          return;
+        }
+      }
+
+      // Handle binary audio data
       if (!workerReady || !audioWorker) {
-        console.warn('⚠️ Audio worker not ready yet');
+        logger.warn('⚠️ Audio worker not ready yet');
         return;
       }
 
-      const rawWs = ws.raw as ServerWebSocket;
       const audioBuffer = Buffer.from(event.data as ArrayBuffer);
-      console.log(`🎵 Received speech segment: ${audioBuffer.length} bytes`);
-      processSpeechSegment(rawWs, audioBuffer);
+      logger.debug(`🎵 Received speech segment: ${audioBuffer.length} bytes`);
+
+      // Get stored context (if any)
+      const context = (rawWs as any).audioContext || null;
+      processSpeechSegment(rawWs, audioBuffer, context);
     },
     onOpen(_, ws) {
       (ws.raw as ServerWebSocket).subscribe(topic);
-      console.log('🔌 WebSocket connection opened');
+      logger.info('🔌 WebSocket connection opened');
 
       // Send welcome message
       ws.send(
@@ -157,14 +178,18 @@ app.get(
     },
     onClose(_, ws) {
       (ws.raw as ServerWebSocket).unsubscribe(topic);
-      console.log('🔌 WebSocket connection closed');
+      logger.info('🔌 WebSocket connection closed');
     },
   }))
 );
 
-function processSpeechSegment(ws: ServerWebSocket, chunk: Buffer) {
+function processSpeechSegment(
+  ws: ServerWebSocket,
+  chunk: Buffer,
+  context: any = null
+) {
   if (!audioWorker || !workerReady) {
-    console.warn('⚠️ Audio worker not available');
+    logger.warn('⚠️ Audio worker not available');
     return;
   }
 
@@ -179,20 +204,28 @@ function processSpeechSegment(ws: ServerWebSocket, chunk: Buffer) {
   // Quick validation: check if audio has actual content (not just silence)
   const maxAmplitude = Math.max(...float32Audio.map(Math.abs));
   if (maxAmplitude < 0.01) {
-    console.log('🔇 Audio segment too quiet, skipping transcription');
+    logger.debug('🔇 Audio segment too quiet, skipping transcription');
     return;
   }
 
   // Send audio data to worker for transcription
   const id = crypto.randomUUID();
-  console.log(
+  logger.debug(
     `📤 Sending speech to worker for transcription: ${float32Audio.length} samples`
   );
-  audioWorker.postMessage({
+
+  const message = {
     type: 'transcribe-audio',
     id,
     audioData: float32Audio,
-  });
+    context,
+  };
+
+  if (context) {
+    logger.debug('📍 Including context in worker message:', context);
+  }
+
+  audioWorker.postMessage(message);
 }
 
 // Health check endpoint
@@ -256,10 +289,10 @@ app.post('/api/transcribe', async (c) => {
 // Initialize and start server
 async function startServer() {
   try {
-    console.log('🚀 Starting Voice Agent Server...');
+    logger.info('🚀 Starting Voice Agent Server...');
 
     // Initialize audio worker first
-    console.log('🔄 Initializing audio worker...');
+    logger.info('🔄 Initializing audio worker...');
     await initializeWorker();
 
     // Start the server
@@ -269,18 +302,18 @@ async function startServer() {
       websocket,
     });
 
-    console.log(`🌟 Voice Agent Server running at http://localhost:3000`);
-    console.log(`🎤 Audio worker ready for speech-to-text processing`);
-    console.log(`📡 WebSocket endpoint: ws://localhost:3000/ws`);
+    logger.info(`🌟 Voice Agent Server running at http://localhost:3000`);
+    logger.info(`🎤 Audio worker ready for speech-to-text processing`);
+    logger.info(`📡 WebSocket endpoint: ws://localhost:3000/ws`);
   } catch (error) {
-    console.error('💥 Failed to start server:', error);
+    logger.error('💥 Failed to start server:', error);
     process.exit(1);
   }
 }
 
 // Graceful shutdown
 process.on('SIGTERM', () => {
-  console.log('🛑 Shutting down gracefully...');
+  logger.info('🛑 Shutting down gracefully...');
   if (audioWorker) {
     audioWorker.terminate();
   }
@@ -291,7 +324,7 @@ process.on('SIGTERM', () => {
 });
 
 process.on('SIGINT', () => {
-  console.log('🛑 Received SIGINT, shutting down gracefully...');
+  logger.info('🛑 Received SIGINT, shutting down gracefully...');
   if (audioWorker) {
     audioWorker.terminate();
   }
@@ -302,4 +335,4 @@ process.on('SIGINT', () => {
 });
 
 // Start the server
-startServer().catch(console.error);
+startServer().catch(logger.error);

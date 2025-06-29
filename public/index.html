@@ -5,6 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Voice Agent</title>
     <link rel="stylesheet" href="styles.css" />
+    <!-- ONNX Runtime -->
+    <script src="https://unpkg.com/onnxruntime-web@1.14.0/dist/ort.min.js"></script>
+    <!-- VAD Library -->
+    <script src="https://unpkg.com/@ricky0123/vad-web@0.0.19/dist/bundle.min.js"></script>
   </head>
   <body>
     <!-- Main Content -->
@@ -22,36 +26,43 @@
 
       <!-- Bottom Controls -->
       <div class="bottom-bar">
-        <button id="clearBtn" class="bottom-btn">
-          <svg viewBox="0 0 24 24" class="btn-icon">
+        <button class="bottom-btn" id="clearBtn">
+          <svg class="btn-icon" viewBox="0 0 24 24">
             <path
-              d="M19 7L18.1 19.2C18 20.8 16.8 22 15.2 22H8.8C7.2 22 6 20.8 5.9 19.2L5 7M10 11V17M14 11V17M15 7V4C15 3.4 14.6 3 14 3H10C9.4 3 9 3.4 9 4V7M4 7H20"
+              d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"
             />
           </svg>
-          Clear
+          <span>Clear</span>
         </button>
-        <button id="disconnectBtn" class="bottom-btn disconnect">
-          <svg viewBox="0 0 24 24" class="btn-icon">
+
+        <button class="bottom-btn location hidden" id="locationBtn">
+          <svg class="btn-icon" viewBox="0 0 24 24">
             <path
-              d="M16 3C19.9 3 23 6.1 23 10S19.9 17 16 17H13V15H16C18.8 15 21 12.8 21 10S18.8 5 16 5H13V3H16ZM8 21C4.1 21 1 17.9 1 14S4.1 7 8 7H11V9H8C5.2 9 3 11.2 3 14S5.2 19 8 19H11V21H8Z"
+              d="M12,11.5A2.5,2.5 0 0,1 9.5,9A2.5,2.5 0 0,1 12,6.5A2.5,2.5 0 0,1 14.5,9A2.5,2.5 0 0,1 12,11.5M12,2A7,7 0 0,0 5,9C5,14.25 12,22 12,22C12,22 19,14.25 19,9A7,7 0 0,0 12,2Z"
             />
           </svg>
-          Disconnect
+          <span>Location</span>
         </button>
-        <button id="connectBtn" class="bottom-btn connect hidden">
-          <svg viewBox="0 0 24 24" class="btn-icon">
+
+        <button class="bottom-btn disconnect hidden" id="disconnectBtn">
+          <svg class="btn-icon" viewBox="0 0 24 24">
+            <path
+              d="M16.56,5.44L15.11,6.89C16.84,7.94 18,9.83 18,12A6,6 0 0,1 12,18A6,6 0 0,1 6,12C6,9.83 7.16,7.94 8.88,6.88L7.44,5.44C5.36,6.88 4,9.28 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12C20,9.28 18.64,6.88 16.56,5.44M12,4A8,8 0 0,1 18.93,6.07L20.34,4.66C18.17,2.49 15.21,1.71 12,1.71C8.79,1.71 5.83,2.49 3.66,4.66L5.07,6.07A8,8 0 0,1 12,4Z"
+            />
+          </svg>
+          <span>Disconnect</span>
+        </button>
+
+        <button class="bottom-btn connect" id="connectBtn">
+          <svg class="btn-icon" viewBox="0 0 24 24">
             <path
               d="M20.01 15.38C18.78 15.38 17.59 15.18 16.48 14.82C16.13 14.7 15.74 14.79 15.47 15.06L13.9 17.03C11.07 15.68 8.42 13.13 7.01 10.2L8.96 8.54C9.23 8.26 9.31 7.87 9.2 7.52C8.83 6.41 8.64 5.22 8.64 3.99C8.64 3.45 8.19 3 7.65 3H4.19C3.65 3 3 3.24 3 3.99C3 13.28 10.73 21 20.01 21C20.72 21 21 20.37 21 19.82V16.37C21 15.93 20.55 15.38 20.01 15.38Z"
             />
           </svg>
-          Connect
+          <span>Connect</span>
         </button>
       </div>
     </div>
-
-    <!-- External Library Dependencies -->
-    <script src="https://unpkg.com/onnxruntime-web@1.14.0/dist/ort.js"></script>
-    <script src="https://unpkg.com/@ricky0123/vad-web@0.0.22/dist/bundle.min.js"></script>
 
     <!-- Application Script -->
     <script src="script.js"></script>

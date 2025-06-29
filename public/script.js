@@ -6,12 +6,15 @@ let isConnected = false;
 let isUserDisconnected = false; // Track if user manually disconnected
 let isVadReady = false; // Track if VAD is initialized and ready
 let currentAudio = null; // Track currently playing TTS audio
+let userLocation = null; // Cache user location
+let locationPermissionGranted = false;
 
 // DOM elements
 const statusIndicator = document.getElementById('statusIndicator');
 const statusText = document.getElementById('statusText');
 
 const clearBtn = document.getElementById('clearBtn');
+const locationBtn = document.getElementById('locationBtn');
 const disconnectBtn = document.getElementById('disconnectBtn');
 const connectBtn = document.getElementById('connectBtn');
 const messagesEl = document.getElementById('messages');
@@ -284,12 +287,6 @@ function connectWebSocket() {
     }
 
     updateStatus(false);
-
-    // Only auto-reconnect if it wasn't a user-initiated disconnect
-    if (!isUserDisconnected) {
-      addMessage('Reconnecting in 3 seconds...', 'system');
-      setTimeout(connectWebSocket, 3000);
-    }
   };
 
   ws.onerror = (error) => {
@@ -297,7 +294,7 @@ function connectWebSocket() {
 
     // Only show error message if it's not a user-initiated disconnect
     if (!isUserDisconnected) {
-      addMessage('Connection error - retrying...', 'error');
+      addMessage('Connection error.', 'error');
     }
 
     // Stop voice listening on connection error
@@ -305,6 +302,8 @@ function connectWebSocket() {
       stopListening();
       addMessage('Voice detection stopped (connection error)', 'system');
     }
+
+    updateStatus(false);
   };
 }
 
@@ -373,12 +372,30 @@ async function initializeVAD() {
             console.log('Speech started');
             updateStatus(isConnected);
           },
-          onSpeechEnd: (audio) => {
+          onSpeechEnd: async (audio) => {
             console.log('Speech ended, audio length:', audio.length);
             updateStatus(isConnected);
 
             if (ws && ws.readyState === WebSocket.OPEN) {
-              // Send audio data as Float32Array buffer
+              // Step 1: Gather context information
+              const datetime = getCurrentDateTime();
+              // const location = await getCurrentLocation();
+
+              const context = {
+                datetime: datetime.readable,
+                // location: location ? location.readable : undefined,
+              };
+
+              // Step 2: Send context first
+              console.log('📍 Sending context:', context);
+              ws.send(
+                JSON.stringify({
+                  type: 'audio-context',
+                  context: context,
+                })
+              );
+
+              // Step 3: Send audio data as Float32Array buffer
               const buffer = new ArrayBuffer(audio.length * 4);
               const view = new Float32Array(buffer);
               view.set(audio);
@@ -386,6 +403,16 @@ async function initializeVAD() {
               console.log('Sending audio data:', audio.length, 'samples');
               ws.send(buffer);
               addMessage(`Audio sent (${audio.length} samples)`, 'system');
+
+              // Show context info to user
+              if (context.location) {
+                addMessage(
+                  `📍 Context: ${context.datetime}, ${context.location}`,
+                  'system'
+                );
+              } else {
+                addMessage(`📍 Context: ${context.datetime}`, 'system');
+              }
             } else {
               addMessage('Not connected to server', 'error');
             }
@@ -499,6 +526,119 @@ function checkBrowserCompatibility() {
   return true;
 }
 
+// Check if running in secure context (HTTPS)
+function checkSecureContext() {
+  const isSecure = window.isSecureContext;
+  const protocol = window.location.protocol;
+
+  console.log('🔒 Protocol:', protocol);
+  console.log('🔒 Secure context:', isSecure);
+  console.log('🔒 Location:', window.location.href);
+
+  if (
+    !isSecure &&
+    protocol !== 'https:' &&
+    !window.location.hostname.includes('localhost')
+  ) {
+    addMessage('⚠️ Location requires HTTPS in production', 'system');
+    addMessage('🔒 Current protocol: ' + protocol, 'system');
+    return false;
+  }
+
+  return true;
+}
+
+// Handle location permission request
+async function requestLocationPermission() {
+  console.log('📍 Manual location permission request triggered');
+
+  // Check current permission status first
+  if ('permissions' in navigator) {
+    try {
+      const permission = await navigator.permissions.query({
+        name: 'geolocation',
+      });
+      console.log('📍 Current permission state:', permission.state);
+
+      if (permission.state === 'denied') {
+        addMessage('📍 Location permission was previously denied', 'system');
+        addMessage(
+          '📍 To enable: Click the 🔒/🌐 icon in your address bar → Location → Allow',
+          'system'
+        );
+        addMessage('📍 Then refresh the page and try again', 'system');
+        // Offer manual location input
+        setTimeout(() => {
+          promptManualLocation();
+        }, 1000);
+        return;
+      } else if (permission.state === 'granted') {
+        addMessage(
+          '📍 Location permission already granted, getting location...',
+          'system'
+        );
+      } else {
+        addMessage('📍 Requesting location permission...', 'system');
+      }
+    } catch (e) {
+      console.log(
+        '📍 Permission API not available, proceeding with geolocation request'
+      );
+      addMessage('📍 Requesting location permission...', 'system');
+    }
+  } else {
+    addMessage('📍 Requesting location permission...', 'system');
+  }
+
+  const location = await getCurrentLocation();
+  updateLocationButtonState(location !== null);
+
+  if (location) {
+    addMessage(`📍 Location access granted: ${location.readable}`, 'system');
+  } else {
+    addMessage('📍 Location access denied or unavailable', 'system');
+    addMessage('📍 💡 To enable location:', 'system');
+    addMessage('📍 1. Click the 🔒 or 🌐 icon in your address bar', 'system');
+    addMessage('📍 2. Find "Location" and set it to "Allow"', 'system');
+    addMessage('📍 3. Refresh the page and try again', 'system');
+    // Offer manual location input as fallback
+    setTimeout(() => {
+      promptManualLocation();
+    }, 1000);
+  }
+}
+
+// Prompt user for manual location input
+function promptManualLocation() {
+  const location = prompt(
+    '📍 Alternatively, enter your location manually (e.g., "San Francisco, CA"):'
+  );
+
+  if (location && location.trim()) {
+    userLocation = {
+      readable: location.trim(),
+      manual: true,
+    };
+    locationPermissionGranted = true;
+    updateLocationButtonState(true);
+    addMessage(`📍 Manual location set: ${location.trim()}`, 'system');
+    console.log('📍 Manual location set:', userLocation);
+  } else if (location === '') {
+    addMessage('📍 Manual location cancelled', 'system');
+  }
+}
+
+// Update location button state
+function updateLocationButtonState(granted) {
+  if (granted) {
+    locationBtn.classList.add('granted');
+    locationBtn.querySelector('span').textContent = 'Located';
+  } else {
+    locationBtn.classList.remove('granted');
+    locationBtn.querySelector('span').textContent = 'Location';
+  }
+}
+
 // Main initialization function
 async function initializeApp() {
   addMessage('Initializing voice agent...', 'system');
@@ -507,6 +647,25 @@ async function initializeApp() {
   if (!checkBrowserCompatibility()) {
     addMessage('Browser not compatible with voice detection', 'error');
     return;
+  }
+
+  // Check secure context for geolocation
+  const isSecure = checkSecureContext();
+
+  // Show location button for manual permission
+  if (navigator.geolocation && isSecure) {
+    locationBtn.classList.remove('hidden');
+    addMessage(
+      '📍 Click the location button to enable location context (optional)',
+      'system'
+    );
+  } else if (navigator.geolocation && !isSecure) {
+    addMessage(
+      '📍 Location unavailable: requires HTTPS or localhost',
+      'system'
+    );
+  } else {
+    addMessage('📍 Geolocation not supported by browser', 'system');
   }
 
   // Connect WebSocket first
@@ -542,6 +701,7 @@ async function initializeApp() {
 // Event listeners setup
 function setupEventListeners() {
   clearBtn.addEventListener('click', clearMessages);
+  locationBtn.addEventListener('click', requestLocationPermission);
   disconnectBtn.addEventListener('click', disconnect);
   connectBtn.addEventListener('click', connect);
 }
@@ -554,3 +714,124 @@ window.addEventListener('DOMContentLoaded', () => {
 
 // Initialize app when page is fully loaded
 window.addEventListener('load', initializeApp);
+
+// Get user's current location
+async function getCurrentLocation() {
+  console.log('📍 getCurrentLocation called');
+
+  if (!navigator.geolocation) {
+    console.log('📍 Geolocation not supported by browser');
+    return null;
+  }
+
+  console.log('📍 Geolocation API available');
+
+  if (userLocation && locationPermissionGranted) {
+    console.log('📍 Using cached location:', userLocation.readable);
+    return userLocation; // Return cached location
+  }
+
+  console.log('📍 Requesting fresh location...');
+
+  return new Promise((resolve) => {
+    const options = {
+      enableHighAccuracy: false, // Faster, less battery intensive
+      timeout: 10000, // Increased timeout
+      maximumAge: 300000, // Use cached location if less than 5 minutes old
+    };
+
+    console.log('📍 Calling navigator.geolocation.getCurrentPosition...');
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        console.log('📍 Position obtained:', position);
+        const { latitude, longitude } = position.coords;
+
+        try {
+          // Try to get readable location using reverse geocoding
+          console.log('📍 Attempting reverse geocoding...');
+          const response = await fetch(
+            `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`
+          );
+          const data = await response.json();
+          console.log('📍 Reverse geocoding result:', data);
+
+          userLocation = {
+            latitude: latitude.toFixed(6),
+            longitude: longitude.toFixed(6),
+            city: data.city || 'Unknown',
+            region: data.principalSubdivision || 'Unknown',
+            country: data.countryName || 'Unknown',
+            readable: `${data.city || 'Unknown'}, ${data.principalSubdivision || 'Unknown'}, ${data.countryName || 'Unknown'}`,
+          };
+
+          locationPermissionGranted = true;
+          console.log(
+            '📍 Location obtained with geocoding:',
+            userLocation.readable
+          );
+          resolve(userLocation);
+        } catch (geocodeError) {
+          console.log('📍 Reverse geocoding failed:', geocodeError);
+          // Fallback to coordinates only if reverse geocoding fails
+          userLocation = {
+            latitude: latitude.toFixed(6),
+            longitude: longitude.toFixed(6),
+            readable: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
+          };
+
+          locationPermissionGranted = true;
+          console.log(
+            '📍 Location obtained (coordinates only):',
+            userLocation.readable
+          );
+          resolve(userLocation);
+        }
+      },
+      (error) => {
+        console.log('📍 Geolocation error details:', error);
+        console.log('📍 Error code:', error.code);
+        console.log('📍 Error message:', error.message);
+
+        let errorMessage = 'Unknown location error';
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            errorMessage = 'Location access denied by user';
+            break;
+          case error.POSITION_UNAVAILABLE:
+            errorMessage = 'Location information unavailable';
+            break;
+          case error.TIMEOUT:
+            errorMessage = 'Location request timed out';
+            break;
+        }
+
+        console.log('📍 Processed error message:', errorMessage);
+        locationPermissionGranted = false;
+        resolve(null);
+      },
+      options
+    );
+  });
+}
+
+// Get formatted current datetime
+function getCurrentDateTime() {
+  const now = new Date();
+
+  const options = {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZoneName: 'short',
+  };
+
+  return {
+    iso: now.toISOString(),
+    readable: now.toLocaleDateString('en-US', options),
+    timestamp: now.getTime(),
+  };
+}
