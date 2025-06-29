@@ -379,11 +379,11 @@ async function initializeVAD() {
             if (ws && ws.readyState === WebSocket.OPEN) {
               // Step 1: Gather context information
               const datetime = getCurrentDateTime();
-              // const location = await getCurrentLocation();
+              const location = await getCurrentLocation();
 
               const context = {
                 datetime: datetime.readable,
-                // location: location ? location.readable : undefined,
+                location: location ? location.readable : undefined,
               };
 
               // Step 2: Send context first
@@ -719,6 +719,19 @@ window.addEventListener('load', initializeApp);
 async function getCurrentLocation() {
   console.log('📍 getCurrentLocation called');
 
+  // Pre-flight check for secure context, which is required for Geolocation API
+  if (
+    !window.isSecureContext &&
+    window.location.protocol !== 'https:' &&
+    !window.location.hostname.includes('localhost')
+  ) {
+    console.error(
+      '📍 Geolocation failed: Page is not served over HTTPS or localhost.'
+    );
+    addMessage('📍 Location requires a secure connection (HTTPS).', 'error');
+    return null;
+  }
+
   if (!navigator.geolocation) {
     console.log('📍 Geolocation not supported by browser');
     return null;
@@ -733,17 +746,26 @@ async function getCurrentLocation() {
 
   console.log('📍 Requesting fresh location...');
 
+  // Wrap in a promise with a fallback timeout to prevent freezing
   return new Promise((resolve) => {
     const options = {
       enableHighAccuracy: false, // Faster, less battery intensive
-      timeout: 10000, // Increased timeout
+      timeout: 10000, // API's own timeout
       maximumAge: 300000, // Use cached location if less than 5 minutes old
     };
+
+    // Fallback timeout in case the browser API hangs
+    const fallbackTimeout = setTimeout(() => {
+      console.error('📍 Geolocation request timed out (fallback).');
+      addMessage('Location request timed out. Please try again.', 'error');
+      resolve(null);
+    }, 12000); // 12 seconds, slightly longer than the API's timeout
 
     console.log('📍 Calling navigator.geolocation.getCurrentPosition...');
 
     navigator.geolocation.getCurrentPosition(
       async (position) => {
+        clearTimeout(fallbackTimeout); // Clear the fallback
         console.log('📍 Position obtained:', position);
         const { latitude, longitude } = position.coords;
 
@@ -756,13 +778,20 @@ async function getCurrentLocation() {
           const data = await response.json();
           console.log('📍 Reverse geocoding result:', data);
 
+          const locationParts = [
+            data.city,
+            data.principalSubdivision,
+            data.countryName,
+          ].filter(Boolean); // Filter out empty/null/undefined parts
+
           userLocation = {
             latitude: latitude.toFixed(6),
             longitude: longitude.toFixed(6),
             city: data.city || 'Unknown',
             region: data.principalSubdivision || 'Unknown',
             country: data.countryName || 'Unknown',
-            readable: `${data.city || 'Unknown'}, ${data.principalSubdivision || 'Unknown'}, ${data.countryName || 'Unknown'}`,
+            readable:
+              locationParts.join(', ') || 'Location details unavailable',
           };
 
           locationPermissionGranted = true;
@@ -789,6 +818,7 @@ async function getCurrentLocation() {
         }
       },
       (error) => {
+        clearTimeout(fallbackTimeout); // Clear the fallback
         console.log('📍 Geolocation error details:', error);
         console.log('📍 Error code:', error.code);
         console.log('📍 Error message:', error.message);
@@ -796,13 +826,26 @@ async function getCurrentLocation() {
         let errorMessage = 'Unknown location error';
         switch (error.code) {
           case error.PERMISSION_DENIED:
-            errorMessage = 'Location access denied by user';
+            errorMessage = 'Location access denied by user.';
+            addMessage('You denied the location permission.', 'system');
+            addMessage(
+              'To enable, update permissions in your browser settings.',
+              'system'
+            );
             break;
           case error.POSITION_UNAVAILABLE:
-            errorMessage = 'Location information unavailable';
+            errorMessage = 'Location information unavailable.';
+            addMessage(
+              'Could not determine your location. Please try again.',
+              'error'
+            );
             break;
           case error.TIMEOUT:
-            errorMessage = 'Location request timed out';
+            errorMessage = 'Location request timed out.';
+            addMessage(
+              'Location request timed out. Please try again.',
+              'error'
+            );
             break;
         }
 
