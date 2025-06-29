@@ -351,6 +351,48 @@ app.post('/api/transcribe', async (c) => {
   }
 });
 
+// Configuration endpoints for voice engines
+app.get('/config', (c) => {
+  // Return current config (default values since worker state isn't exposed)
+  const currentConfig = {
+    sttEngine: 'groq',
+    ttsEngine: 'groq',
+  };
+  return c.json({ config: currentConfig });
+});
+
+app.post('/config', async (c) => {
+  if (!workerReady || !audioWorker) {
+    return c.json({ error: 'Worker not ready' }, 503);
+  }
+
+  try {
+    const newConfig = await c.req.json();
+    logger.info('⚙️ Received new config from client:', newConfig);
+
+    // Validate config format (currently only groq is supported)
+    // Future: Add validation for other engines like 'openai', 'elevenlabs', etc.
+    const validConfig: any = {};
+    if (newConfig.sttEngine === 'groq') {
+      validConfig.sttEngine = 'groq';
+    }
+    if (newConfig.ttsEngine === 'groq') {
+      validConfig.ttsEngine = 'groq';
+    }
+
+    // Forward config to the worker
+    audioWorker.postMessage({
+      type: 'setConfig',
+      config: validConfig,
+    });
+
+    return c.json({ success: true, newConfig: validConfig });
+  } catch (error) {
+    logger.error('❌ Failed to update config:', error);
+    return c.json({ error: 'Invalid configuration format' }, 400);
+  }
+});
+
 // Initialize and start server
 async function startServer() {
   try {

@@ -225,6 +225,38 @@ async function playTTSAudio(base64AudioData) {
   }
 }
 
+// Update voice engine configuration on the server
+async function updateVoiceEngineConfig(sttEngine = 'groq', ttsEngine = 'groq') {
+  const config = { sttEngine, ttsEngine };
+
+  try {
+    const response = await fetch('/config', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(config),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Failed to update config');
+    }
+
+    const result = await response.json();
+    console.log('⚙️ Config updated successfully:', result.newConfig);
+    addMessage(
+      `Engine config: STT=${result.newConfig.sttEngine}, TTS=${result.newConfig.ttsEngine}`,
+      'system'
+    );
+    return result.newConfig;
+  } catch (error) {
+    console.error('❌ Error updating config:', error);
+    addMessage(`Config update failed: ${error.message}`, 'error');
+    return null;
+  }
+}
+
 // WebSocket connection management
 function connectWebSocket() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -647,59 +679,23 @@ function updateLocationButtonState(granted) {
 async function initializeApp() {
   addMessage('Initializing voice agent...', 'system');
 
-  // Check browser compatibility first
   if (!checkBrowserCompatibility()) {
     addMessage('Browser not compatible with voice detection', 'error');
     return;
   }
 
-  // Check secure context for geolocation
-  const isSecure = checkSecureContext();
+  configureONNXRuntime();
+  setupEventListeners();
 
-  // Show location button for manual permission
+  const isSecure = checkSecureContext();
   if (navigator.geolocation && isSecure) {
     locationBtn.classList.remove('hidden');
-    addMessage(
-      '📍 Click the location button to enable location context (optional)',
-      'system'
-    );
-  } else if (navigator.geolocation && !isSecure) {
-    addMessage(
-      '📍 Location unavailable: requires HTTPS or localhost',
-      'system'
-    );
-  } else {
-    addMessage('📍 Geolocation not supported by browser', 'system');
   }
 
-  // Connect WebSocket first
-  connectWebSocket();
-
-  // Initialize VAD with retry logic
-  let initAttempts = 0;
-  const maxAttempts = 3;
-
-  while (initAttempts < maxAttempts && !vadInstance) {
-    initAttempts++;
-    await initializeVAD();
-
-    if (!vadInstance && initAttempts < maxAttempts) {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-    }
-  }
-
-  if (vadInstance) {
-    // addMessage('Voice detection ready', 'system');
-  } else {
-    addMessage(
-      'Failed to initialize voice detection after all attempts',
-      'error'
-    );
-    addMessage(
-      'Try refreshing the page or check browser compatibility',
-      'system'
-    );
-  }
+  // Set initial config on the backend, then initialize VAD and connect
+  await updateVoiceEngineConfig();
+  await initializeVAD();
+  connectWebSocket(); // This will also trigger auto-start listening when ready
 }
 
 // Event listeners setup

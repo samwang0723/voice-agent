@@ -20,6 +20,18 @@ interface ConversationMessage {
 
 let conversationHistory: ConversationMessage[] = [];
 
+// --- Configuration ---
+interface VoiceEngineConfig {
+  sttEngine: 'groq'; // Future: | 'openai' | 'azure' | etc.
+  ttsEngine: 'groq'; // Future: | 'elevenlabs' | 'azure' | etc.
+}
+
+let config: VoiceEngineConfig = {
+  sttEngine: 'groq',
+  ttsEngine: 'groq',
+};
+// --------------------
+
 // Default sample rate, can be updated via 'init' message
 let sampleRate = 16000;
 
@@ -27,6 +39,11 @@ let sampleRate = 16000;
 interface InitMessage {
   type: 'init';
   sampleRate: number;
+}
+
+interface SetConfigMessage {
+  type: 'setConfig';
+  config: Partial<VoiceEngineConfig>;
 }
 
 interface AudioTranscribeMessage {
@@ -39,7 +56,7 @@ interface AudioTranscribeMessage {
   };
 }
 
-type WorkerMessage = AudioTranscribeMessage | InitMessage;
+type WorkerMessage = AudioTranscribeMessage | InitMessage | SetConfigMessage;
 
 interface SpeechEndResponse {
   type: 'speech-end';
@@ -111,8 +128,35 @@ function float32ArrayToWav(
   return Buffer.from(arrayBuffer);
 }
 
+// --- Service Abstractions ---
+interface TranscriptionService {
+  transcribe(audio: Float32Array): Promise<string>;
+}
+
+interface TextToSpeechService {
+  generateSpeech(text: string): Promise<ArrayBuffer | null>;
+}
+
+/*
+ * How to add new engines in the future:
+ *
+ * 1. Update VoiceEngineConfig interface to include new engine types
+ * 2. Add new implementation functions (e.g., transcribeWithOpenAI, generateSpeechWithElevenLabs)
+ * 3. Update the service factory switch statements to handle new engines
+ * 4. Update server validation in src/index.ts to accept new engine names
+ * 5. Optionally add UI controls in the frontend
+ *
+ * Example:
+ * - Add 'openai' to sttEngine type
+ * - Implement async function transcribeWithOpenAI(audio: Float32Array): Promise<string>
+ * - Add case 'openai': return { transcribe: transcribeWithOpenAI }; to getTranscriptionService()
+ */
+// -------------------------
+
+// --- Groq Implementations ---
+
 // Transcribe audio using Groq
-async function transcribeWithWhisper(audio: Float32Array): Promise<string> {
+async function transcribeWithGroq(audio: Float32Array): Promise<string> {
   try {
     if (!process.env.GROQ_API_KEY) {
       logger.error('GROQ_API_KEY environment variable not set');
@@ -158,6 +202,85 @@ async function transcribeWithWhisper(audio: Float32Array): Promise<string> {
     }
 
     return '[Transcription failed - unknown error]';
+  }
+}
+
+// Generate speech from text using Groq TTS
+async function generateSpeechWithGroq(
+  text: string
+): Promise<ArrayBuffer | null> {
+  try {
+    if (!process.env.GROQ_API_KEY) {
+      logger.error('GROQ_API_KEY environment variable not set for TTS');
+      return null;
+    }
+
+    // Skip TTS for error messages (those wrapped in brackets)
+    if (text.startsWith('[') && text.endsWith(']')) {
+      logger.info(`Skipping TTS for error message: ${text}`);
+      return null;
+    }
+
+    // Limit text length for TTS (Groq has 10K character limit)
+    const truncatedText =
+      text.length > 1000 ? text.substring(0, 1000) + '...' : text;
+
+    logger.info(`🎵 Generating speech for: "${truncatedText}"`);
+
+    // Create speech using Groq TTS
+    const response = await groq.audio.speech.create({
+      model: 'playai-tts',
+      voice: 'Cheyenne-PlayAI', // Using a pleasant female voice
+      input: truncatedText,
+      response_format: 'wav',
+    });
+
+    // Convert response to ArrayBuffer
+    const audioBuffer = await response.arrayBuffer();
+    logger.info(`🎵 Generated speech audio: ${audioBuffer.byteLength} bytes`);
+
+    return audioBuffer;
+  } catch (error) {
+    logger.error('TTS generation failed:', error);
+
+    if (error instanceof Error) {
+      if (error.message.includes('401')) {
+        logger.error('TTS authentication failed - check API key');
+      } else if (error.message.includes('429')) {
+        logger.error('TTS rate limit exceeded - try again later');
+      } else if (error.message.includes('network')) {
+        logger.error('TTS network error - check connection');
+      }
+    }
+
+    return null;
+  }
+}
+
+// --- Service Factory ---
+function getTranscriptionService(): TranscriptionService {
+  switch (config.sttEngine) {
+    case 'groq':
+    default:
+      logger.debug('Using Groq for STT');
+      return { transcribe: transcribeWithGroq };
+    // Future engines can be added here:
+    // case 'openai':
+    //   logger.debug('Using OpenAI for STT');
+    //   return { transcribe: transcribeWithOpenAI };
+  }
+}
+
+function getTextToSpeechService(): TextToSpeechService {
+  switch (config.ttsEngine) {
+    case 'groq':
+    default:
+      logger.debug('Using Groq for TTS');
+      return { generateSpeech: generateSpeechWithGroq };
+    // Future engines can be added here:
+    // case 'elevenlabs':
+    //   logger.debug('Using ElevenLabs for TTS');
+    //   return { generateSpeech: generateSpeechWithElevenLabs };
   }
 }
 
@@ -245,58 +368,6 @@ function addToHistory(role: 'user' | 'assistant', content: string) {
   }
 }
 
-// Generate speech from text using Groq TTS
-async function generateSpeechFromText(
-  text: string
-): Promise<ArrayBuffer | null> {
-  try {
-    if (!process.env.GROQ_API_KEY) {
-      logger.error('GROQ_API_KEY environment variable not set for TTS');
-      return null;
-    }
-
-    // Skip TTS for error messages (those wrapped in brackets)
-    if (text.startsWith('[') && text.endsWith(']')) {
-      logger.info('Skipping TTS for error message');
-      return null;
-    }
-
-    // Limit text length for TTS (Groq has 10K character limit)
-    const truncatedText =
-      text.length > 1000 ? text.substring(0, 1000) + '...' : text;
-
-    logger.info(`🎵 Generating speech for: "${truncatedText}"`);
-
-    // Create speech using Groq TTS
-    const response = await groq.audio.speech.create({
-      model: 'playai-tts',
-      voice: 'Cheyenne-PlayAI', // Using a pleasant female voice
-      input: truncatedText,
-      response_format: 'wav',
-    });
-
-    // Convert response to ArrayBuffer
-    const audioBuffer = await response.arrayBuffer();
-    logger.info(`🎵 Generated speech audio: ${audioBuffer.byteLength} bytes`);
-
-    return audioBuffer;
-  } catch (error) {
-    logger.error('TTS generation failed:', error);
-
-    if (error instanceof Error) {
-      if (error.message.includes('401')) {
-        logger.error('TTS authentication failed - check API key');
-      } else if (error.message.includes('429')) {
-        logger.error('TTS rate limit exceeded - try again later');
-      } else if (error.message.includes('network')) {
-        logger.error('TTS network error - check connection');
-      }
-    }
-
-    return null;
-  }
-}
-
 // Handle messages from main thread
 // @ts-ignore - Bun worker global
 self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
@@ -323,6 +394,11 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
             error: errorMessage,
           });
         }
+        break;
+
+      case 'setConfig':
+        config = { ...config, ...message.config };
+        logger.info(`Worker config updated: ${JSON.stringify(config)}`);
         break;
 
       case 'transcribe-audio':
@@ -357,7 +433,7 @@ async function transcribeAndProcess(
 ) {
   try {
     // Step 1: Transcribe audio to text
-    const transcript = await transcribeWithWhisper(audioData);
+    const transcript = await getTranscriptionService().transcribe(audioData);
     logger.debug(`Transcription result: "${transcript}"`);
 
     // Check if transcription produced a meaningful result
@@ -390,7 +466,8 @@ async function transcribeAndProcess(
     addToHistory('assistant', aiResponse);
 
     // Step 3: Generate TTS for the AI response
-    const speechAudioNullable = await generateSpeechFromText(aiResponse);
+    const speechAudioNullable =
+      await getTextToSpeechService().generateSpeech(aiResponse);
     const speechAudio =
       speechAudioNullable === null ? undefined : speechAudioNullable;
 
