@@ -243,7 +243,7 @@ async function generateSpeechFromText(
     // Create speech using Groq TTS
     const response = await groq.audio.speech.create({
       model: 'playai-tts',
-      voice: 'Celeste-PlayAI', // Using a pleasant female voice
+      voice: 'Cheyenne-PlayAI', // Using a pleasant female voice
       input: truncatedText,
       response_format: 'wav',
     });
