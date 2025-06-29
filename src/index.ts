@@ -22,6 +22,7 @@ interface WorkerResponse {
   id?: string;
   transcript?: string;
   aiResponse?: string;
+  speechAudio?: ArrayBuffer;
   success?: boolean;
   error?: string;
 }
@@ -70,12 +71,20 @@ function initializeWorker(): Promise<void> {
                 const aiMessage = {
                   type: 'agent',
                   message: message.aiResponse,
+                  speechAudio: message.speechAudio
+                    ? Buffer.from(message.speechAudio).toString('base64')
+                    : undefined,
                   timestamp: new Date().toISOString(),
                 };
                 console.log(
-                  `🤖 Broadcasting AI response: ${JSON.stringify(aiMessage)}`
+                  `🤖 Broadcasting AI response: ${JSON.stringify({ ...aiMessage, speechAudio: aiMessage.speechAudio ? `[${Buffer.from(message.speechAudio!).length} bytes]` : undefined })}`
                 );
                 console.log(`🤖 AI Response content: "${message.aiResponse}"`);
+                if (message.speechAudio) {
+                  console.log(
+                    `🎵 TTS Audio size: ${message.speechAudio.byteLength} bytes`
+                  );
+                }
                 server.publish(topic, JSON.stringify(aiMessage));
               }
             } else {

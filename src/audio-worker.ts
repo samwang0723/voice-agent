@@ -34,6 +34,7 @@ interface SpeechEndResponse {
   id: string;
   transcript: string;
   aiResponse: string;
+  speechAudio?: ArrayBuffer; // TTS audio data
 }
 
 interface InitResponse {
@@ -217,6 +218,58 @@ function addToHistory(role: 'user' | 'assistant', content: string) {
   }
 }
 
+// Generate speech from text using Groq TTS
+async function generateSpeechFromText(
+  text: string
+): Promise<ArrayBuffer | null> {
+  try {
+    if (!process.env.GROQ_API_KEY) {
+      console.error('GROQ_API_KEY environment variable not set for TTS');
+      return null;
+    }
+
+    // Skip TTS for error messages (those wrapped in brackets)
+    if (text.startsWith('[') && text.endsWith(']')) {
+      console.log('Skipping TTS for error message');
+      return null;
+    }
+
+    // Limit text length for TTS (Groq has 10K character limit)
+    const truncatedText =
+      text.length > 1000 ? text.substring(0, 1000) + '...' : text;
+
+    console.log(`🎵 Generating speech for: "${truncatedText}"`);
+
+    // Create speech using Groq TTS
+    const response = await groq.audio.speech.create({
+      model: 'playai-tts',
+      voice: 'Celeste-PlayAI', // Using a pleasant female voice
+      input: truncatedText,
+      response_format: 'wav',
+    });
+
+    // Convert response to ArrayBuffer
+    const audioBuffer = await response.arrayBuffer();
+    console.log(`🎵 Generated speech audio: ${audioBuffer.byteLength} bytes`);
+
+    return audioBuffer;
+  } catch (error) {
+    console.error('TTS generation failed:', error);
+
+    if (error instanceof Error) {
+      if (error.message.includes('401')) {
+        console.error('TTS authentication failed - check API key');
+      } else if (error.message.includes('429')) {
+        console.error('TTS rate limit exceeded - try again later');
+      } else if (error.message.includes('network')) {
+        console.error('TTS network error - check connection');
+      }
+    }
+
+    return null;
+  }
+}
+
 // Handle messages from main thread
 // @ts-ignore - Bun worker global
 self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
@@ -242,19 +295,29 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
         // Step 2: Generate AI response
         const aiResponse = await generateAIResponse(transcript);
 
-        // Step 3: Add to conversation history
+        // Step 3: Generate speech from AI response
+        let speechAudio: ArrayBuffer | undefined;
+        if (aiResponse && !aiResponse.startsWith('[')) {
+          const audioBuffer = await generateSpeechFromText(aiResponse);
+          if (audioBuffer) {
+            speechAudio = audioBuffer;
+          }
+        }
+
+        // Step 4: Add to conversation history
         addToHistory('user', transcript);
         if (!aiResponse.startsWith('[') || !aiResponse.endsWith(']')) {
           // Only add successful AI responses to history
           addToHistory('assistant', aiResponse);
         }
 
-        // Step 4: Send response to frontend
+        // Step 5: Send response to frontend (including speech audio if available)
         sendMessage({
           type: 'speech-end',
           id: message.id,
           transcript,
           aiResponse,
+          speechAudio,
         });
         break;
       }

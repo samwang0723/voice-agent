@@ -5,6 +5,7 @@ let isListening = false;
 let isConnected = false;
 let isUserDisconnected = false; // Track if user manually disconnected
 let isVadReady = false; // Track if VAD is initialized and ready
+let currentAudio = null; // Track currently playing TTS audio
 
 // DOM elements
 const statusIndicator = document.getElementById('statusIndicator');
@@ -148,6 +149,70 @@ function updateStatus(connected) {
   }
 }
 
+// Play TTS audio from base64 data
+async function playTTSAudio(base64AudioData) {
+  try {
+    if (currentAudio) {
+      currentAudio.pause();
+      currentAudio = null;
+    }
+
+    // Find the most recent agent message to add visual indicator
+    const agentMessages = document.querySelectorAll('.message.agent');
+    const lastAgentMessage = agentMessages[agentMessages.length - 1];
+
+    // Convert base64 to ArrayBuffer
+    const binaryString = atob(base64AudioData);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+
+    // Create blob and object URL
+    const audioBlob = new Blob([bytes], { type: 'audio/wav' });
+    const audioUrl = URL.createObjectURL(audioBlob);
+
+    // Create and play audio
+    currentAudio = new Audio(audioUrl);
+
+    // Add visual indicator when audio starts playing
+    if (lastAgentMessage) {
+      lastAgentMessage.classList.add('speaking');
+    }
+
+    currentAudio.onended = () => {
+      URL.revokeObjectURL(audioUrl);
+      currentAudio = null;
+      // Remove visual indicator when audio ends
+      if (lastAgentMessage) {
+        lastAgentMessage.classList.remove('speaking');
+      }
+      console.log('🎵 TTS audio playback finished');
+    };
+
+    currentAudio.onerror = (error) => {
+      console.error('🎵 TTS audio playback error:', error);
+      URL.revokeObjectURL(audioUrl);
+      currentAudio = null;
+      // Remove visual indicator on error
+      if (lastAgentMessage) {
+        lastAgentMessage.classList.remove('speaking');
+      }
+    };
+
+    console.log('🎵 Playing TTS audio...');
+    await currentAudio.play();
+  } catch (error) {
+    console.error('🎵 Failed to play TTS audio:', error);
+    if (currentAudio) {
+      currentAudio = null;
+    }
+    // Remove visual indicator on exception
+    const agentMessages = document.querySelectorAll('.message.agent.speaking');
+    agentMessages.forEach((msg) => msg.classList.remove('speaking'));
+  }
+}
+
 // WebSocket connection management
 function connectWebSocket() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -181,6 +246,12 @@ function connectWebSocket() {
         case 'agent':
           console.log('🤖 Adding agent message:', data.message);
           addMessage(`${data.message}`, 'agent');
+
+          // Play TTS audio if available
+          if (data.speechAudio) {
+            console.log('🎵 Agent message includes TTS audio, playing...');
+            playTTSAudio(data.speechAudio);
+          }
           break;
         case 'error':
           addMessage(`${data.message}`, 'error');

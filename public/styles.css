@@ -26,7 +26,12 @@ body {
   border-radius: 100%;
   z-index: -1;
   background: #0a0a0a;
-  box-shadow: 10px -55px 30px 15px #823ca6, 24px -10px 47px 10px #aab3d2, -21px -25px 97px 10px #5acee3, 51px 5px 17px 10px #1b7d8f, 3px 2px 77px 10px #f30bf5;
+  box-shadow:
+    10px -55px 30px 15px #823ca6,
+    24px -10px 47px 10px #aab3d2,
+    -21px -25px 97px 10px #5acee3,
+    51px 5px 17px 10px #1b7d8f,
+    3px 2px 77px 10px #f30bf5;
   transform-origin: center;
   opacity: 0;
   filter: blur(40px);
@@ -56,7 +61,6 @@ body {
     transform: translate(-50%, -50%) rotate(360deg);
   }
 }
-
 
 /* App Container */
 .app-container {
@@ -130,6 +134,28 @@ body {
   color: white;
 }
 
+.message.agent.speaking .content {
+  color: #87ceeb;
+  position: relative;
+}
+
+.message.agent.speaking .content::after {
+  content: '🔊';
+  margin-left: 0.5rem;
+  font-size: 0.8rem;
+  animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
 .message.error .content {
   color: #ff6b6b;
 }
@@ -161,8 +187,6 @@ body {
     transform: translateY(0);
   }
 }
-
-
 
 /* Bottom Bar */
 .bottom-bar {
@@ -231,11 +255,11 @@ body {
     padding: 0.75rem;
     padding-bottom: 70px;
   }
-  
+
   .bottom-bar {
     padding: 0.75rem;
   }
-  
+
   .btn-icon {
     width: 18px;
     height: 18px;
@@ -243,20 +267,19 @@ body {
 }
 
 @media (max-width: 480px) {
-  
   .status-bar {
     padding: 0.75rem;
   }
-  
+
   .status-text {
     font-size: 0.8rem;
   }
-  
+
   .messages-container {
     padding: 0.5rem;
     padding-bottom: 60px;
   }
-  
+
   .bottom-btn {
     font-size: 0.65rem;
     padding: 0.4rem;
@@ -266,4 +289,4 @@ body {
 /* Utility Classes */
 .hidden {
   display: none !important;
-} 
+}
