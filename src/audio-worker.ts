@@ -1,9 +1,24 @@
 import Groq from 'groq-sdk';
+import { generateText } from 'ai';
+import { createModelByKey } from './llm';
+import logger from './logger';
 
 // Initialize Groq client
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY || '', // You'll need to set this environment variable
 });
+
+// Initialize AI model
+let aiModel: ReturnType<typeof createModelByKey>;
+
+// Conversation history storage
+interface ConversationMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: number;
+}
+
+let conversationHistory: ConversationMessage[] = [];
 
 // Worker message types
 interface AudioTranscribeMessage {
@@ -18,6 +33,7 @@ interface SpeechEndResponse {
   type: 'speech-end';
   id: string;
   transcript: string;
+  aiResponse: string;
 }
 
 interface InitResponse {
@@ -132,6 +148,75 @@ async function transcribeWithWhisper(audio: Float32Array): Promise<string> {
   }
 }
 
+// Generate AI response using the configured model
+async function generateAIResponse(userMessage: string): Promise<string> {
+  try {
+    if (!aiModel) {
+      console.error('AI model not initialized');
+      return '[AI model not available]';
+    }
+
+    // Prepare messages for the conversation
+    const messages = [
+      {
+        role: 'system' as const,
+        content:
+          'You are a helpful voice assistant. Provide concise, natural responses suitable for voice interaction. Keep responses conversational and brief unless more detail is specifically requested.',
+      },
+      // Include conversation history
+      ...conversationHistory.map((msg) => ({
+        role: msg.role as 'user' | 'assistant',
+        content: msg.content,
+      })),
+      // Add the current user message
+      {
+        role: 'user' as const,
+        content: userMessage,
+      },
+    ];
+
+    const result = await generateText({
+      model: aiModel,
+      messages,
+      temperature: 0.7,
+      maxTokens: 500, // Keep responses reasonably short for voice interaction
+    });
+
+    logger.info(`🤖 history: ${JSON.stringify(messages)}`);
+
+    return result.text || '[No response generated]';
+  } catch (error) {
+    console.error('AI response generation failed:', error);
+
+    if (error instanceof Error) {
+      if (error.message.includes('401') || error.message.includes('api key')) {
+        return '[AI authentication failed - check API key]';
+      } else if (error.message.includes('429')) {
+        return '[AI rate limit exceeded - try again later]';
+      } else if (error.message.includes('network')) {
+        return '[AI network error - check connection]';
+      }
+      return `[AI error: ${error.message}]`;
+    }
+
+    return '[AI response failed - unknown error]';
+  }
+}
+
+// Add message to conversation history
+function addToHistory(role: 'user' | 'assistant', content: string) {
+  conversationHistory.push({
+    role,
+    content,
+    timestamp: Date.now(),
+  });
+
+  // Keep history manageable (last 20 messages = 10 conversation pairs)
+  if (conversationHistory.length > 20) {
+    conversationHistory = conversationHistory.slice(-20);
+  }
+}
+
 // Handle messages from main thread
 // @ts-ignore - Bun worker global
 self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
@@ -139,14 +224,40 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 
   try {
     switch (message.type) {
-      case 'transcribe-audio':
+      case 'transcribe-audio': {
+        // Step 1: Transcribe the audio
         const transcript = await transcribeWithWhisper(message.audioData);
+
+        if (transcript.startsWith('[') && transcript.endsWith(']')) {
+          // Transcription failed, send error response
+          sendMessage({
+            type: 'speech-end',
+            id: message.id,
+            transcript,
+            aiResponse: '[Cannot generate response without valid transcript]',
+          });
+          return;
+        }
+
+        // Step 2: Generate AI response
+        const aiResponse = await generateAIResponse(transcript);
+
+        // Step 3: Add to conversation history
+        addToHistory('user', transcript);
+        if (!aiResponse.startsWith('[') || !aiResponse.endsWith(']')) {
+          // Only add successful AI responses to history
+          addToHistory('assistant', aiResponse);
+        }
+
+        // Step 4: Send response to frontend
         sendMessage({
           type: 'speech-end',
           id: message.id,
           transcript,
+          aiResponse,
         });
         break;
+      }
 
       default:
         // This is a type error and should not happen with TypeScript
@@ -161,10 +272,24 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
   }
 };
 
-// Signal that the worker is ready (no async initialization needed anymore)
-sendMessage({
-  type: 'init-complete',
-  success: true,
-});
+// Initialize AI model and signal that the worker is ready
+try {
+  aiModel = createModelByKey('gemini-2.5-flash');
+  console.log('✅ AI model (gemini-2.5-flash) initialized successfully');
 
-console.log('✅ Audio worker ready for transcription.');
+  sendMessage({
+    type: 'init-complete',
+    success: true,
+  });
+
+  console.log('✅ Audio worker ready for transcription and AI responses.');
+} catch (error) {
+  console.error('❌ Failed to initialize AI model:', error);
+
+  sendMessage({
+    type: 'init-complete',
+    success: false,
+    error:
+      error instanceof Error ? error.message : 'Failed to initialize AI model',
+  });
+}

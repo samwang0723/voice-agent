@@ -21,6 +21,7 @@ interface WorkerResponse {
   type: 'speech-end' | 'init-complete' | 'error';
   id?: string;
   transcript?: string;
+  aiResponse?: string;
   success?: boolean;
   error?: string;
 }
@@ -53,6 +54,7 @@ function initializeWorker(): Promise<void> {
               `🎤 Speech processed, transcript: "${message.transcript}"`
             );
             if (message.transcript && server) {
+              // Send transcript message
               const transcriptMessage = {
                 type: 'transcript',
                 transcript: message.transcript,
@@ -62,6 +64,20 @@ function initializeWorker(): Promise<void> {
                 `📢 Broadcasting transcript: ${JSON.stringify(transcriptMessage)}`
               );
               server.publish(topic, JSON.stringify(transcriptMessage));
+
+              // Send AI response message if available
+              if (message.aiResponse) {
+                const aiMessage = {
+                  type: 'agent',
+                  message: message.aiResponse,
+                  timestamp: new Date().toISOString(),
+                };
+                console.log(
+                  `🤖 Broadcasting AI response: ${JSON.stringify(aiMessage)}`
+                );
+                console.log(`🤖 AI Response content: "${message.aiResponse}"`);
+                server.publish(topic, JSON.stringify(aiMessage));
+              }
             } else {
               console.warn('⚠️ No transcript generated from audio');
             }
@@ -192,10 +208,10 @@ app.get('/api/health', (c) => {
 app.post('/api/transcribe', async (c) => {
   if (!audioWorker || !workerReady) {
     return c.json(
-      { 
+      {
         error: 'Audio worker not ready',
-        timestamp: new Date().toISOString() 
-      }, 
+        timestamp: new Date().toISOString(),
+      },
       503
     );
   }
@@ -219,10 +235,10 @@ app.post('/api/transcribe', async (c) => {
     });
   } catch (error) {
     return c.json(
-      { 
+      {
         error: 'Invalid request format',
-        timestamp: new Date().toISOString() 
-      }, 
+        timestamp: new Date().toISOString(),
+      },
       400
     );
   }
@@ -232,7 +248,7 @@ app.post('/api/transcribe', async (c) => {
 async function startServer() {
   try {
     console.log('🚀 Starting Voice Agent Server...');
-    
+
     // Initialize audio worker first
     console.log('🔄 Initializing audio worker...');
     await initializeWorker();

@@ -39,6 +39,8 @@ function configureONNXRuntime() {
 
 // Add message to the messages area
 function addMessage(content, type = 'info') {
+  console.log(`💬 Adding message - Content: "${content}", Type: "${type}"`);
+
   const messageEl = document.createElement('div');
   messageEl.className = `message ${type}`;
 
@@ -50,6 +52,11 @@ function addMessage(content, type = 'info') {
       <span class="timestamp">${new Date().toLocaleTimeString()}</span>
     `;
   }
+
+  console.log(
+    `💬 Created message element with class: "${messageEl.className}"`
+  );
+  console.log(`💬 Message HTML: ${messageEl.innerHTML}`);
 
   messagesEl.appendChild(messageEl);
 
@@ -161,24 +168,32 @@ function connectWebSocket() {
   ws.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
+      console.log('📥 Received WebSocket message:', data);
 
       switch (data.type) {
         case 'connected':
           addMessage(`${data.message}`, 'system');
           break;
         case 'transcript':
+          console.log('📝 Adding transcript message:', data.transcript);
           addMessage(`${data.transcript}`, 'transcript');
           break;
         case 'agent':
+          console.log('🤖 Adding agent message:', data.message);
           addMessage(`${data.message}`, 'agent');
           break;
         case 'error':
           addMessage(`${data.message}`, 'error');
           break;
         default:
+          console.log(
+            '❓ Unknown message type, adding as default:',
+            event.data
+          );
           addMessage(`${event.data}`);
       }
     } catch (e) {
+      console.error('❌ Error parsing WebSocket message:', e);
       addMessage(`${event.data}`);
     }
   };
