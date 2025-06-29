@@ -66,10 +66,10 @@ body {
 .app-container {
   display: flex;
   flex-direction: column;
-  height: 100vh;
   position: relative;
   z-index: 1;
   overflow: hidden;
+  height: calc(calc(var(--vh, 1vh) * 100));
 }
 
 /* Status Bar */
@@ -282,6 +282,11 @@ body {
     width: 18px;
     height: 18px;
   }
+
+  .app-container {
+    height: calc(calc(var(--vh, 1vh) * 100) - 80px);
+    max-height: calc(calc(var(--vh, 1vh) * 100) - 80px);
+  }
 }
 
 @media (max-width: 480px) {
@@ -301,6 +306,11 @@ body {
   .bottom-btn {
     font-size: 0.65rem;
     padding: 0.4rem;
+  }
+
+  .app-container {
+    height: calc(calc(var(--vh, 1vh) * 100) - 80px);
+    max-height: calc(calc(var(--vh, 1vh) * 100) - 80px);
   }
 }
 
