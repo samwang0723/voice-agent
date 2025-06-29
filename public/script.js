@@ -63,12 +63,10 @@ function addMessage(content, type = 'info') {
 
   messagesEl.appendChild(messageEl);
 
-  // Auto-scroll to bottom with a small delay to ensure DOM is updated
-  setTimeout(() => {
-    if (messagesContainer) {
-      messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    }
-  }, 10);
+  // Auto-scroll to bottom to show the latest message
+  if (messagesContainer) {
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  }
 }
 
 // Check if both conditions are met and auto-start listening
@@ -110,10 +108,12 @@ async function startListening(isAutoStart = false) {
 
 // Stop listening
 function stopListening() {
-  if (vadInstance && isListening) {
-    console.log('Stopping VAD...');
-    vadInstance.pause();
+  if (vadInstance) {
+    console.log('Stopping VAD and releasing microphone...');
+    vadInstance.destroy(); // Use destroy() to release the microphone
+    vadInstance = null;
     isListening = false;
+    isVadReady = false; // VAD is no longer ready
     updateStatus(isConnected);
   }
 }
@@ -300,11 +300,9 @@ function connectWebSocket() {
   ws.onclose = () => {
     console.log('WebSocket disconnected');
 
-    // Stop voice listening if it's currently active
-    if (isListening) {
-      stopListening();
-      addMessage('Voice detection stopped (connection lost)', 'system');
-    }
+    // Stop voice listening
+    stopListening();
+    addMessage('Voice detection stopped (connection lost)', 'system');
 
     updateStatus(false);
   };
@@ -318,10 +316,8 @@ function connectWebSocket() {
     }
 
     // Stop voice listening on connection error
-    if (isListening) {
-      stopListening();
-      addMessage('Voice detection stopped (connection error)', 'system');
-    }
+    stopListening();
+    addMessage('Voice detection stopped (connection error)', 'system');
 
     updateStatus(false);
   };
@@ -485,9 +481,7 @@ function clearMessages() {
 function disconnect() {
   if (ws && ws.readyState === WebSocket.OPEN) {
     // Stop voice listening first
-    if (isListening) {
-      stopListening();
-    }
+    stopListening();
 
     // Mark as user-initiated disconnect to prevent auto-reconnect
     isUserDisconnected = true;
@@ -504,7 +498,7 @@ function disconnect() {
 }
 
 // Connect to server
-function connect() {
+async function connect() {
   if (ws && ws.readyState === WebSocket.OPEN) {
     addMessage('Already connected', 'system');
     return;
@@ -514,6 +508,12 @@ function connect() {
   isUserDisconnected = false;
 
   addMessage('Connecting to server...', 'system');
+
+  // Re-initialize VAD if it's not ready
+  if (!isVadReady) {
+    await initializeVAD();
+  }
+
   connectWebSocket();
 }
 
