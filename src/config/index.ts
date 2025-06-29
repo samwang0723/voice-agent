@@ -15,6 +15,10 @@ export interface ModelConfig {
   baseURL?: string;
 }
 
+export interface TranscriptionConfig extends ModelConfig {
+  format?: 'wav' | 'webm';
+}
+
 // AI Model Configurations
 export const modelConfigs: Record<string, ModelConfig> = {
   'gemini-1.5-flash': {
@@ -35,11 +39,12 @@ export const modelConfigs: Record<string, ModelConfig> = {
 };
 
 // Transcription Model Configurations
-export const transcriptionConfigs: Record<string, ModelConfig> = {
+export const transcriptionConfigs: Record<string, TranscriptionConfig> = {
   groq: {
     provider: 'groq',
     modelName: 'whisper-large-v3-turbo',
     apiKey: process.env.GROQ_API_KEY,
+    format: (process.env.GROQ_TRANSCRIPTION_FORMAT as 'wav' | 'webm') || 'wav',
   },
 };
 

@@ -27,9 +27,10 @@ export class GroqTranscriptionService implements ITranscriptionService {
     if (!groq) return '[Error: Groq client not initialized]';
 
     try {
-      const audioBlob = new Blob([audio], { type: 'audio/wav' });
-      const audioFile = new File([audioBlob], 'audio.wav', {
-        type: 'audio/wav',
+      const format = config.format || 'wav';
+      const audioBlob = new Blob([audio], { type: `audio/${format}` });
+      const audioFile = new File([audioBlob], `audio.${format}`, {
+        type: `audio/${format}`,
       }) as any;
 
       const transcription = await groq.audio.transcriptions.create({
