@@ -7,15 +7,12 @@ let isUserDisconnected = false; // Track if user manually disconnected
 let isVadReady = false; // Track if VAD is initialized and ready
 let audioContext = null;
 let currentAudioSource = null; // Use for Web Audio API source node
-let userLocation = null; // Cache user location
-let locationPermissionGranted = false;
 
 // DOM elements
 const statusIndicator = document.getElementById('statusIndicator');
 const statusText = document.getElementById('statusText');
 
 const clearBtn = document.getElementById('clearBtn');
-const locationBtn = document.getElementById('locationBtn');
 const disconnectBtn = document.getElementById('disconnectBtn');
 const connectBtn = document.getElementById('connectBtn');
 const messagesEl = document.getElementById('messages');
@@ -225,40 +222,13 @@ async function playTTSAudio(base64AudioData) {
   }
 }
 
-// Update voice engine configuration on the server
-async function updateVoiceEngineConfig(sttEngine = 'groq', ttsEngine = 'groq') {
-  const config = { sttEngine, ttsEngine };
-
-  try {
-    const response = await fetch('/config', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(config),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error || 'Failed to update config');
-    }
-
-    const result = await response.json();
-    console.log('⚙️ Config updated successfully:', result.newConfig);
-    addMessage(
-      `Engine config: STT=${result.newConfig.sttEngine}, TTS=${result.newConfig.ttsEngine}`,
-      'system'
-    );
-    return result.newConfig;
-  } catch (error) {
-    console.error('❌ Error updating config:', error);
-    addMessage(`Config update failed: ${error.message}`, 'error');
-    return null;
-  }
-}
-
 // WebSocket connection management
 function connectWebSocket() {
+  if (isConnected) {
+    console.log('Already connected.');
+    return;
+  }
+
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const wsUrl = `${protocol}//${window.location.host}/ws`;
 
@@ -415,11 +385,9 @@ async function initializeVAD() {
             if (ws && ws.readyState === WebSocket.OPEN) {
               // Step 1: Gather context information
               const datetime = getCurrentDateTime();
-              // const location = await getCurrentLocation();
 
               const context = {
                 datetime: datetime.readable,
-                location: location ? location.readable : undefined,
               };
 
               // Step 2: Send context first
@@ -451,14 +419,7 @@ async function initializeVAD() {
               );
 
               // Show context info to user
-              if (context.location) {
-                addMessage(
-                  `📍 Context: ${context.datetime}, ${context.location}`,
-                  'system'
-                );
-              } else {
-                addMessage(`📍 Context: ${context.datetime}`, 'system');
-              }
+              addMessage(`📍 Context: ${context.datetime}`, 'system');
             } else {
               addMessage('Not connected to server', 'error');
             }
@@ -586,7 +547,7 @@ function checkSecureContext() {
     protocol !== 'https:' &&
     !window.location.hostname.includes('localhost')
   ) {
-    addMessage('⚠️ Location requires HTTPS in production', 'system');
+    addMessage('⚠️ Features require HTTPS in production', 'system');
     addMessage('🔒 Current protocol: ' + protocol, 'system');
     return false;
   }
@@ -594,124 +555,27 @@ function checkSecureContext() {
   return true;
 }
 
-// Handle location permission request
-async function requestLocationPermission() {
-  console.log('📍 Manual location permission request triggered');
-
-  // Check current permission status first
-  if ('permissions' in navigator) {
-    try {
-      const permission = await navigator.permissions.query({
-        name: 'geolocation',
-      });
-      console.log('📍 Current permission state:', permission.state);
-
-      if (permission.state === 'denied') {
-        addMessage('📍 Location permission was previously denied', 'system');
-        addMessage(
-          '📍 To enable: Click the 🔒/🌐 icon in your address bar → Location → Allow',
-          'system'
-        );
-        addMessage('📍 Then refresh the page and try again', 'system');
-        // Offer manual location input
-        setTimeout(() => {
-          promptManualLocation();
-        }, 1000);
-        return;
-      } else if (permission.state === 'granted') {
-        addMessage(
-          '📍 Location permission already granted, getting location...',
-          'system'
-        );
-      } else {
-        addMessage('📍 Requesting location permission...', 'system');
-      }
-    } catch (e) {
-      console.log(
-        '📍 Permission API not available, proceeding with geolocation request'
-      );
-      addMessage('📍 Requesting location permission...', 'system');
-    }
-  } else {
-    addMessage('📍 Requesting location permission...', 'system');
-  }
-
-  const location = await getCurrentLocation();
-  updateLocationButtonState(location !== null);
-
-  if (location) {
-    addMessage(`📍 Location access granted: ${location.readable}`, 'system');
-  } else {
-    addMessage('📍 Location access denied or unavailable', 'system');
-    addMessage('📍 💡 To enable location:', 'system');
-    addMessage('📍 1. Click the 🔒 or 🌐 icon in your address bar', 'system');
-    addMessage('📍 2. Find "Location" and set it to "Allow"', 'system');
-    addMessage('📍 3. Refresh the page and try again', 'system');
-    // Offer manual location input as fallback
-    setTimeout(() => {
-      promptManualLocation();
-    }, 1000);
-  }
-}
-
-// Prompt user for manual location input
-function promptManualLocation() {
-  const location = prompt(
-    '📍 Alternatively, enter your location manually (e.g., "San Francisco, CA"):'
-  );
-
-  if (location && location.trim()) {
-    userLocation = {
-      readable: location.trim(),
-      manual: true,
-    };
-    locationPermissionGranted = true;
-    updateLocationButtonState(true);
-    addMessage(`📍 Manual location set: ${location.trim()}`, 'system');
-    console.log('📍 Manual location set:', userLocation);
-  } else if (location === '') {
-    addMessage('📍 Manual location cancelled', 'system');
-  }
-}
-
-// Update location button state
-function updateLocationButtonState(granted) {
-  if (granted) {
-    locationBtn.classList.add('granted');
-    locationBtn.querySelector('span').textContent = 'Located';
-  } else {
-    locationBtn.classList.remove('granted');
-    locationBtn.querySelector('span').textContent = 'Location';
-  }
-}
-
 // Main initialization function
 async function initializeApp() {
-  addMessage('Initializing voice agent...', 'system');
+  console.log('🚀 Initializing application...');
 
-  if (!checkBrowserCompatibility()) {
-    addMessage('Browser not compatible with voice detection', 'error');
-    return;
-  }
-
+  // Configure ONNX for compatibility before anything else
   configureONNXRuntime();
-  setupEventListeners();
 
-  const isSecure = checkSecureContext();
-  if (navigator.geolocation && isSecure) {
-    locationBtn.classList.remove('hidden');
+  checkBrowserCompatibility();
+
+  if (checkSecureContext()) {
+    // Set initial config on the backend, then initialize VAD and connect
+    await initializeVAD();
+    connectWebSocket(); // This will also trigger auto-start listening when ready
+  } else {
+    updateStatus(false);
   }
-
-  // Set initial config on the backend, then initialize VAD and connect
-  await updateVoiceEngineConfig();
-  await initializeVAD();
-  connectWebSocket(); // This will also trigger auto-start listening when ready
 }
 
 // Event listeners setup
 function setupEventListeners() {
   clearBtn.addEventListener('click', clearMessages);
-  locationBtn.addEventListener('click', requestLocationPermission);
   disconnectBtn.addEventListener('click', disconnect);
   connectBtn.addEventListener('click', connect);
 }
@@ -725,149 +589,6 @@ window.addEventListener('DOMContentLoaded', () => {
 
 // Initialize app when page is fully loaded
 window.addEventListener('load', initializeApp);
-
-// Get user's current location
-async function getCurrentLocation() {
-  console.log('📍 getCurrentLocation called');
-
-  // Pre-flight check for secure context, which is required for Geolocation API
-  if (
-    !window.isSecureContext &&
-    window.location.protocol !== 'https:' &&
-    !window.location.hostname.includes('localhost')
-  ) {
-    console.error(
-      '📍 Geolocation failed: Page is not served over HTTPS or localhost.'
-    );
-    addMessage('📍 Location requires a secure connection (HTTPS).', 'error');
-    return null;
-  }
-
-  if (!navigator.geolocation) {
-    console.log('📍 Geolocation not supported by browser');
-    return null;
-  }
-
-  console.log('📍 Geolocation API available');
-
-  if (userLocation && locationPermissionGranted) {
-    console.log('📍 Using cached location:', userLocation.readable);
-    return userLocation; // Return cached location
-  }
-
-  console.log('📍 Requesting fresh location...');
-
-  // Wrap in a promise with a fallback timeout to prevent freezing
-  return new Promise((resolve) => {
-    const options = {
-      enableHighAccuracy: false, // Faster, less battery intensive
-      timeout: 10000, // API's own timeout
-      maximumAge: 300000, // Use cached location if less than 5 minutes old
-    };
-
-    // Fallback timeout in case the browser API hangs
-    const fallbackTimeout = setTimeout(() => {
-      console.error('📍 Geolocation request timed out (fallback).');
-      addMessage('Location request timed out. Please try again.', 'error');
-      resolve(null);
-    }, 12000); // 12 seconds, slightly longer than the API's timeout
-
-    console.log('📍 Calling navigator.geolocation.getCurrentPosition...');
-
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        clearTimeout(fallbackTimeout); // Clear the fallback
-        console.log('📍 Position obtained:', position);
-        const { latitude, longitude } = position.coords;
-
-        try {
-          // Try to get readable location using reverse geocoding
-          console.log('📍 Attempting reverse geocoding...');
-          const response = await fetch(
-            `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${latitude}&longitude=${longitude}&localityLanguage=en`
-          );
-          const data = await response.json();
-          console.log('📍 Reverse geocoding result:', data);
-
-          const locationParts = [
-            data.city,
-            data.principalSubdivision,
-            data.countryName,
-          ].filter(Boolean); // Filter out empty/null/undefined parts
-
-          userLocation = {
-            latitude: latitude.toFixed(6),
-            longitude: longitude.toFixed(6),
-            city: data.city || 'Unknown',
-            region: data.principalSubdivision || 'Unknown',
-            country: data.countryName || 'Unknown',
-            readable:
-              locationParts.join(', ') || 'Location details unavailable',
-          };
-
-          locationPermissionGranted = true;
-          console.log(
-            '📍 Location obtained with geocoding:',
-            userLocation.readable
-          );
-          resolve(userLocation);
-        } catch (geocodeError) {
-          console.log('📍 Reverse geocoding failed:', geocodeError);
-          // Fallback to coordinates only if reverse geocoding fails
-          userLocation = {
-            latitude: latitude.toFixed(6),
-            longitude: longitude.toFixed(6),
-            readable: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
-          };
-
-          locationPermissionGranted = true;
-          console.log(
-            '📍 Location obtained (coordinates only):',
-            userLocation.readable
-          );
-          resolve(userLocation);
-        }
-      },
-      (error) => {
-        clearTimeout(fallbackTimeout); // Clear the fallback
-        console.log('📍 Geolocation error details:', error);
-        console.log('📍 Error code:', error.code);
-        console.log('📍 Error message:', error.message);
-
-        let errorMessage = 'Unknown location error';
-        switch (error.code) {
-          case error.PERMISSION_DENIED:
-            errorMessage = 'Location access denied by user.';
-            addMessage('You denied the location permission.', 'system');
-            addMessage(
-              'To enable, update permissions in your browser settings.',
-              'system'
-            );
-            break;
-          case error.POSITION_UNAVAILABLE:
-            errorMessage = 'Location information unavailable.';
-            addMessage(
-              'Could not determine your location. Please try again.',
-              'error'
-            );
-            break;
-          case error.TIMEOUT:
-            errorMessage = 'Location request timed out.';
-            addMessage(
-              'Location request timed out. Please try again.',
-              'error'
-            );
-            break;
-        }
-
-        console.log('📍 Processed error message:', errorMessage);
-        locationPermissionGranted = false;
-        resolve(null);
-      },
-      options
-    );
-  });
-}
 
 // Get formatted current datetime
 function getCurrentDateTime() {

@@ -240,24 +240,6 @@ body {
   color: #4caf50;
 }
 
-.bottom-btn.location {
-  color: #ffd700;
-}
-
-.bottom-btn.location:hover {
-  background: rgba(255, 215, 0, 0.2);
-  color: #ffeb3b;
-}
-
-.bottom-btn.location.granted {
-  color: #51cf66;
-}
-
-.bottom-btn.location.granted:hover {
-  background: rgba(81, 207, 102, 0.2);
-  color: #4caf50;
-}
-
 .btn-icon {
   width: 20px;
   height: 20px;
