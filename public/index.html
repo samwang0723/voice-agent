@@ -439,6 +439,17 @@
 
           // Try multiple configurations for better compatibility
           const vadConfigs = [
+            {
+              model: 'v5',
+              positiveSpeechThreshold: 0.5,
+              negativeSpeechThreshold: 0.35,
+              userSpeakingThreshold: 0.6,
+              redemptionFrames: 3,
+              preSpeechPadFrames: 1,
+              minSpeechFrames: 9,
+              redemptionFrames: 24,
+              frameSamples: 512,
+            },
             // Simplest configuration first
             {
               model: 'legacy',
@@ -452,16 +463,6 @@
               model: 'legacy',
               positiveSpeechThreshold: 0.6,
               negativeSpeechThreshold: 0.4,
-              redemptionFrames: 8,
-              preSpeechPadFrames: 1,
-              minSpeechFrames: 4,
-              frameSamples: 1536,
-            },
-            // V5 model as last resort
-            {
-              model: 'v5',
-              positiveSpeechThreshold: 0.7,
-              negativeSpeechThreshold: 0.55,
               redemptionFrames: 8,
               preSpeechPadFrames: 1,
               minSpeechFrames: 4,
