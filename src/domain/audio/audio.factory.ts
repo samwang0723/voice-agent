@@ -6,6 +6,10 @@ import {
   CartesiaTranscriptionService,
   CartesiaTextToSpeechService,
 } from '../../infrastructure/ai/cartesia.service';
+import {
+  DeepgramTranscriptionService,
+  DeepgramTextToSpeechService,
+} from '../../infrastructure/ai/deepgram.service';
 import type {
   ITranscriptionService,
   ITextToSpeechService,
@@ -15,11 +19,13 @@ import logger from '../../infrastructure/logger';
 const transcriptionServices: Record<string, ITranscriptionService> = {
   groq: new GroqTranscriptionService(),
   cartesia: new CartesiaTranscriptionService(),
+  deepgram: new DeepgramTranscriptionService(),
 };
 
 const ttsServices: Record<string, ITextToSpeechService> = {
   groq: new GroqTextToSpeechService(),
   cartesia: new CartesiaTextToSpeechService(),
+  deepgram: new DeepgramTextToSpeechService(),
 };
 
 export function getTranscriptionService(

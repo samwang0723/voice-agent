@@ -5,7 +5,13 @@ export const serverConfig = {
   logLevel: process.env.LOG_LEVEL || 'info',
 };
 
-export type ModelProvider = 'anthropic' | 'openai' | 'google' | 'groq' | 'cartesia';
+export type ModelProvider =
+  | 'anthropic'
+  | 'openai'
+  | 'google'
+  | 'groq'
+  | 'cartesia'
+  | 'deepgram';
 
 export interface ModelConfig {
   provider: ModelProvider;
@@ -59,6 +65,13 @@ export const transcriptionConfigs: Record<string, TranscriptionConfig> = {
     sampleRate: 16000,
     inputType: 'raw',
   },
+  deepgram: {
+    provider: 'deepgram',
+    modelName: 'nova-2',
+    apiKey: process.env.DEEPGRAM_API_KEY,
+    language: 'en',
+    inputType: 'container',
+  },
 };
 
 export interface TextToSpeechConfig extends ModelConfig {
@@ -77,6 +90,11 @@ export const ttsConfigs: Record<string, TextToSpeechConfig> = {
     modelName: 'sonic-2',
     apiKey: process.env.CARTESIA_API_KEY,
     voiceId: process.env.CARTESIA_VOICE_ID,
+  },
+  deepgram: {
+    provider: 'deepgram',
+    modelName: 'aura-2-iris-en',
+    apiKey: process.env.DEEPGRAM_API_KEY,
   },
 };
 
