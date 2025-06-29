@@ -20,7 +20,15 @@ interface ConversationMessage {
 
 let conversationHistory: ConversationMessage[] = [];
 
+// Default sample rate, can be updated via 'init' message
+let sampleRate = 16000;
+
 // Worker message types
+interface InitMessage {
+  type: 'init';
+  sampleRate: number;
+}
+
 interface AudioTranscribeMessage {
   type: 'transcribe-audio';
   id: string;
@@ -31,7 +39,7 @@ interface AudioTranscribeMessage {
   };
 }
 
-type WorkerMessage = AudioTranscribeMessage;
+type WorkerMessage = AudioTranscribeMessage | InitMessage;
 
 interface SpeechEndResponse {
   type: 'speech-end';
@@ -64,7 +72,7 @@ function sendMessage(message: WorkerResponse) {
 // Convert Float32Array to WAV buffer
 function float32ArrayToWav(
   audioData: Float32Array,
-  sampleRate: number = 16000
+  targetSampleRate: number = 16000
 ): Buffer {
   const length = audioData.length;
   const arrayBuffer = new ArrayBuffer(44 + length * 2);
@@ -84,8 +92,8 @@ function float32ArrayToWav(
   view.setUint32(16, 16, true);
   view.setUint16(20, 1, true);
   view.setUint16(22, 1, true);
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
+  view.setUint32(24, targetSampleRate, true);
+  view.setUint32(28, targetSampleRate * 2, true);
   view.setUint16(32, 2, true);
   view.setUint16(34, 16, true);
   writeString(36, 'data');
@@ -112,7 +120,7 @@ async function transcribeWithWhisper(audio: Float32Array): Promise<string> {
     }
 
     // Convert Float32Array to WAV format
-    const wavBuffer = float32ArrayToWav(audio, 16000);
+    const wavBuffer = float32ArrayToWav(audio, sampleRate);
 
     // Create a Blob that Groq SDK can consume
     const audioBlob = new Blob([wavBuffer], { type: 'audio/wav' });
@@ -296,6 +304,12 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 
   try {
     switch (message.type) {
+      case 'init': {
+        sampleRate = message.sampleRate;
+        logger.info(`🎤 Worker initialized with sample rate: ${sampleRate}`);
+        break;
+      }
+
       case 'transcribe-audio': {
         // Step 1: Transcribe the audio
         const transcript = await transcribeWithWhisper(message.audioData);

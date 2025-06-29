@@ -116,7 +116,6 @@ function stopListening() {
     vadInstance.pause();
     isListening = false;
     updateStatus(isConnected);
-    addMessage('Voice detection stopped', 'system');
   }
 }
 
@@ -274,11 +273,6 @@ function connectWebSocket() {
 
   ws.onclose = () => {
     console.log('WebSocket disconnected');
-
-    // Only show "Disconnected from server" if it wasn't user-initiated
-    if (!isUserDisconnected) {
-      addMessage('Disconnected from server', 'system');
-    }
 
     // Stop voice listening if it's currently active
     if (isListening) {
@@ -685,7 +679,7 @@ async function initializeApp() {
   }
 
   if (vadInstance) {
-    addMessage('Voice detection ready', 'system');
+    // addMessage('Voice detection ready', 'system');
   } else {
     addMessage(
       'Failed to initialize voice detection after all attempts',
