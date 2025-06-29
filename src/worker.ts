@@ -1,6 +1,6 @@
 import Groq from 'groq-sdk';
 import { generateText } from 'ai';
-import { createModelByKey } from './llm';
+import { createModelByKey } from './model';
 import logger from './logger';
 
 // Initialize Groq client
@@ -49,7 +49,7 @@ interface SetConfigMessage {
 interface AudioTranscribeMessage {
   type: 'transcribe-audio';
   sessionId: string;
-  audioData: Float32Array;
+  audioData: Int16Array;
   context?: {
     datetime: string;
     location?: string;
@@ -86,9 +86,9 @@ function sendMessage(message: WorkerResponse) {
   self.postMessage(message);
 }
 
-// Convert Float32Array to WAV buffer
-function float32ArrayToWav(
-  audioData: Float32Array,
+// Convert Int16Array to WAV buffer
+function int16ArrayToWav(
+  audioData: Int16Array,
   targetSampleRate: number = 16000
 ): Buffer {
   const length = audioData.length;
@@ -107,30 +107,25 @@ function float32ArrayToWav(
   writeString(8, 'WAVE');
   writeString(12, 'fmt ');
   view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // Mono
   view.setUint32(24, targetSampleRate, true);
-  view.setUint32(28, targetSampleRate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
+  view.setUint32(28, targetSampleRate * 2, true); // byte rate
+  view.setUint16(32, 2, true); // block align
+  view.setUint16(34, 16, true); // bits per sample
   writeString(36, 'data');
   view.setUint32(40, length * 2, true);
 
-  // Convert float32 to int16
-  const int16Array = new Int16Array(arrayBuffer, 44);
-  for (let i = 0; i < length; i++) {
-    int16Array[i] = Math.max(
-      -32768,
-      Math.min(32767, (audioData[i] ?? 0) * 32767)
-    );
-  }
+  // Copy Int16 data directly
+  const pcm = new Int16Array(arrayBuffer, 44);
+  pcm.set(audioData);
 
   return Buffer.from(arrayBuffer);
 }
 
 // --- Service Abstractions ---
 interface TranscriptionService {
-  transcribe(audio: Float32Array): Promise<string>;
+  transcribe(audio: Int16Array): Promise<string>;
 }
 
 interface TextToSpeechService {
@@ -156,15 +151,15 @@ interface TextToSpeechService {
 // --- Groq Implementations ---
 
 // Transcribe audio using Groq
-async function transcribeWithGroq(audio: Float32Array): Promise<string> {
+async function transcribeWithGroq(audio: Int16Array): Promise<string> {
   try {
     if (!process.env.GROQ_API_KEY) {
       logger.error('GROQ_API_KEY environment variable not set');
       return '[API key not configured]';
     }
 
-    // Convert Float32Array to WAV format
-    const wavBuffer = float32ArrayToWav(audio, sampleRate);
+    // Convert Int16Array to WAV format
+    const wavBuffer = int16ArrayToWav(audio, sampleRate);
 
     // Create a Blob that Groq SDK can consume
     const audioBlob = new Blob([wavBuffer], { type: 'audio/wav' });
@@ -428,7 +423,7 @@ self.onmessage = async (event: MessageEvent<WorkerMessage>) => {
 // Transcribe audio, generate response, and send back to main thread
 async function transcribeAndProcess(
   sessionId: string,
-  audioData: Float32Array,
+  audioData: Int16Array,
   context?: { datetime: string; location?: string }
 ) {
   try {

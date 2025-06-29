@@ -415,7 +415,7 @@ async function initializeVAD() {
             if (ws && ws.readyState === WebSocket.OPEN) {
               // Step 1: Gather context information
               const datetime = getCurrentDateTime();
-              const location = await getCurrentLocation();
+              // const location = await getCurrentLocation();
 
               const context = {
                 datetime: datetime.readable,
@@ -431,14 +431,24 @@ async function initializeVAD() {
                 })
               );
 
-              // Step 3: Send audio data as Float32Array buffer
-              const buffer = new ArrayBuffer(audio.length * 4);
-              const view = new Float32Array(buffer);
-              view.set(audio);
+              // Step 3: Convert to 16-bit PCM and send audio data.
+              // This reduces payload size by 50% compared to Float32.
+              const int16Array = new Int16Array(audio.length);
+              for (let i = 0; i < audio.length; i++) {
+                const s = Math.max(-1, Math.min(1, audio[i]));
+                int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+              }
 
-              console.log('Sending audio data:', audio.length, 'samples');
-              ws.send(buffer);
-              addMessage(`Audio sent (${audio.length} samples)`, 'system');
+              console.log(
+                'Sending audio data as Int16:',
+                int16Array.byteLength,
+                'bytes'
+              );
+              ws.send(int16Array.buffer);
+              addMessage(
+                `Audio sent (${audio.length} samples as 16-bit PCM)`,
+                'system'
+              );
 
               // Show context info to user
               if (context.location) {

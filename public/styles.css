@@ -284,11 +284,6 @@ body {
     width: 18px;
     height: 18px;
   }
-
-  .app-container {
-    height: calc(calc(var(--vh, 1vh) * 100) - 80px);
-    max-height: calc(calc(var(--vh, 1vh) * 100) - 80px);
-  }
 }
 
 @media (max-width: 480px) {
@@ -309,7 +304,13 @@ body {
     font-size: 0.65rem;
     padding: 0.4rem;
   }
+}
 
+/*
+ * Apply height adjustment only on touch devices to account for
+ * mobile browser UI elements without affecting resizable desktop windows.
+ */
+@media (max-width: 768px) and (any-pointer: coarse) {
   .app-container {
     height: calc(calc(var(--vh, 1vh) * 100) - 80px);
     max-height: calc(calc(var(--vh, 1vh) * 100) - 80px);

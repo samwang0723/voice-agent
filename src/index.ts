@@ -39,7 +39,7 @@ interface WorkerResponse {
 function initializeWorker(): Promise<void> {
   return new Promise((resolve, reject) => {
     try {
-      audioWorker = new Worker('./src/audio-worker.ts');
+      audioWorker = new Worker('./src/worker.ts');
 
       audioWorker.onmessage = (event: MessageEvent<WorkerResponse>) => {
         const message = event.data;
@@ -254,32 +254,39 @@ function processSpeechSegment(
     return;
   }
 
-  // The frontend now sends complete Float32Array segments.
-  // We assume the data is in this format.
-  const float32Audio = new Float32Array(
+  // The frontend now sends 16-bit PCM audio data.
+  const int16Audio = new Int16Array(
     chunk.buffer,
     chunk.byteOffset,
-    chunk.length / 4
+    chunk.length / 2 // 2 bytes per Int16 sample
   );
 
   // Quick validation: check if audio has actual content (not just silence)
-  const maxAmplitude = Math.max(...float32Audio.map(Math.abs));
-  if (maxAmplitude < 0.01) {
+  let maxAmplitude = 0;
+  for (let i = 0; i < int16Audio.length; i++) {
+    const amp = Math.abs(int16Audio[i]!);
+    if (amp > maxAmplitude) {
+      maxAmplitude = amp;
+    }
+  }
+
+  // An absolute amplitude of 100 out of 32767 is very quiet.
+  if (maxAmplitude < 100) {
     logger.debug(
-      `🔇 Audio segment from session ${sessionId} too quiet, skipping transcription`
+      `🔇 Audio segment from session ${sessionId} too quiet (max amp: ${maxAmplitude}), skipping transcription`
     );
     return;
   }
 
   // Send audio data to worker for transcription
   logger.debug(
-    `📤 Sending speech to worker for transcription from session ${sessionId}: ${float32Audio.length} samples`
+    `📤 Sending speech to worker for transcription from session ${sessionId}: ${int16Audio.length} samples`
   );
 
   const message = {
     type: 'transcribe-audio',
     sessionId,
-    audioData: float32Audio,
+    audioData: int16Audio,
     context,
   };
 
