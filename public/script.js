@@ -28,6 +28,27 @@ const messagesEl = document.getElementById('messages');
 const messagesContainer = document.querySelector('.messages-container');
 const ttsEngineSelect = document.getElementById('tts-engine-select');
 
+// Function to get client timezone using browser API
+function getClientTimezone() {
+  try {
+    // Use Intl.DateTimeFormat to get the timezone
+    return Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch (error) {
+    console.warn('Failed to detect client timezone:', error);
+    return 'UTC';
+  }
+}
+
+// Function to get current client datetime in ISO format
+function getClientDateTime() {
+  try {
+    return new Date().toISOString();
+  } catch (error) {
+    console.warn('Failed to get client datetime:', error);
+    return new Date().toISOString();
+  }
+}
+
 // OAuth Token Storage Utilities
 function storeToken(tokenData) {
   try {
@@ -35,6 +56,7 @@ function storeToken(tokenData) {
     if (googleLoginBtn) {
       googleLoginBtn.classList.add('hidden');
     }
+    hideLoginPrompt();
     addMessage('Authentication successful', 'system');
     addMessage(`Bearer token: ${tokenData.access_token}`, 'system');
   } catch (error) {
@@ -56,13 +78,73 @@ function getStoredToken() {
 function clearToken() {
   try {
     localStorage.removeItem('oauth_token');
-    if (googleLoginBtn) {
-      googleLoginBtn.classList.remove('hidden');
-    }
+    showLoginPrompt();
     addMessage('Logged out successfully', 'system');
   } catch (error) {
     console.error('Failed to clear token:', error);
     addMessage('Failed to clear authentication token', 'error');
+  }
+}
+
+function isTokenExpired() {
+  try {
+    const tokenData = getStoredToken();
+    if (!tokenData || !tokenData.expires_in) {
+      return false; // No expiration info, assume valid
+    }
+
+    const tokenTimestamp = tokenData.timestamp || 0;
+    const expiresInMs = tokenData.expires_in * 1000;
+    const currentTime = Date.now();
+
+    return currentTime - tokenTimestamp >= expiresInMs;
+  } catch (error) {
+    console.error('Failed to check token expiration:', error);
+    return true; // Assume expired on error
+  }
+}
+
+function showLoginPrompt() {
+  // Remove any existing login prompts first
+  hideLoginPrompt();
+
+  const messageEl = document.createElement('div');
+  messageEl.className = 'message system login-prompt';
+  messageEl.setAttribute('data-login-prompt', 'true');
+
+  messageEl.innerHTML = `
+    <span class="content">
+      🔐 Authentication required for full functionality
+      <button class="google-login-btn dynamic-login-btn" onclick="loginWithGoogle()">
+        <svg class="google-icon" viewBox="0 0 24 24">
+          <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+          <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+          <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+          <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+        </svg>
+        Sign in with Google
+      </button>
+    </span>
+  `;
+
+  messagesEl.appendChild(messageEl);
+  attachLoginButtonListener();
+
+  // Auto-scroll to bottom to show the login prompt
+  if (messagesContainer) {
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  }
+}
+
+function hideLoginPrompt() {
+  const loginPrompts = document.querySelectorAll('[data-login-prompt="true"]');
+  loginPrompts.forEach((prompt) => prompt.remove());
+}
+
+function attachLoginButtonListener() {
+  const dynamicLoginBtn = document.querySelector('.dynamic-login-btn');
+  if (dynamicLoginBtn) {
+    dynamicLoginBtn.addEventListener('click', loginWithGoogle);
   }
 }
 
@@ -154,6 +236,9 @@ async function handleOAuthCallback() {
       throw new Error('No access token received');
     }
 
+    // Add timestamp for expiration checking
+    tokenData.timestamp = Date.now();
+
     storeToken(tokenData);
 
     // Clean up URL parameters
@@ -174,9 +259,17 @@ async function bootstrapAuth() {
     // Check for existing token
     const existingToken = getStoredToken();
     if (existingToken) {
+      // Check if token is expired
+      if (isTokenExpired()) {
+        addMessage('Authentication token expired', 'system');
+        clearToken();
+        return;
+      }
+
       if (googleLoginBtn) {
         googleLoginBtn.classList.add('hidden');
       }
+      hideLoginPrompt();
       addMessage('Already authenticated', 'system');
       addMessage(`Bearer token: ${existingToken.access_token}`, 'system');
       return;
@@ -404,6 +497,14 @@ function connectWebSocket() {
 
   // Extract bearer token from localStorage (optional)
   const tokenData = getStoredToken();
+
+  // Check if token is expired before using it
+  if (tokenData && isTokenExpired()) {
+    addMessage('Authentication token expired', 'system');
+    clearToken();
+    return;
+  }
+
   const bearerToken =
     tokenData && tokenData.access_token ? tokenData.access_token : null;
 
@@ -468,21 +569,24 @@ function connectWebSocket() {
           break;
         case 'auth_required':
           addMessage(`${data.message}`, 'system');
-          addMessage(
-            '🔐 Please authenticate to access external tools and services',
-            'system'
-          );
-          // Show the login button if it's hidden
-          if (googleLoginBtn && googleLoginBtn.classList.contains('hidden')) {
-            googleLoginBtn.classList.remove('hidden');
-            addMessage(
-              'Click the "Sign in with Google" button to authenticate',
-              'system'
-            );
-          }
+          clearToken(); // This will clear token and show login prompt
           break;
         case 'error':
           addMessage(`${data.message}`, 'error');
+          // Check if error is authentication-related
+          if (
+            data.message &&
+            (data.message.includes('401') ||
+              data.message.includes('403') ||
+              data.message.includes('Authentication failed') ||
+              data.message.includes('Access forbidden') ||
+              data.message.includes('Bearer token') ||
+              data.message.includes('token expired') ||
+              data.message.includes('authentication') ||
+              data.message.includes('unauthorized'))
+          ) {
+            clearToken(); // This will clear token and show login prompt
+          }
           break;
         default:
           addMessage(`${event.data}`);
@@ -591,9 +695,13 @@ async function initializeVAD() {
             if (ws && ws.readyState === WebSocket.OPEN) {
               // Step 1: Gather context information
               const datetime = getCurrentDateTime();
+              const timezone = getClientTimezone();
+              const clientDatetime = getClientDateTime();
 
               const context = {
                 datetime: datetime.readable,
+                timezone: timezone,
+                clientDatetime: clientDatetime,
               };
 
               // Step 2: Send context first
@@ -625,7 +733,10 @@ async function initializeVAD() {
               );
 
               // Show context info to user
-              addMessage(`📍 Context: ${context.datetime}`, 'system');
+              addMessage(
+                `📍 Context: ${context.datetime} (${context.timezone})`,
+                'system'
+              );
             } else {
               addMessage('Not connected to server', 'error');
             }

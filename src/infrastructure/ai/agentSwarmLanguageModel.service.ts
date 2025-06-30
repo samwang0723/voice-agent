@@ -1,6 +1,6 @@
 import type { ILanguageModel } from '../../domain/ai/ai.service';
 import type { Message } from '../../domain/conversation/conversation.entity';
-import { AgentSwarmService } from './agentSwarm.service';
+import { AgentSwarmService, type ClientContext } from './agentSwarm.service';
 import { isAgentSwarmConfigured } from '../../config';
 import logger from '../logger';
 
@@ -24,9 +24,29 @@ export class AgentSwarmLanguageModel implements ILanguageModel {
     return context.session.id;
   }
 
+  private extractClientContext(context?: any): ClientContext | undefined {
+    if (!context) {
+      return undefined;
+    }
+
+    const clientContext: ClientContext = {};
+
+    if (context.timezone) {
+      clientContext.timezone = context.timezone;
+    }
+
+    if (context.clientDatetime) {
+      clientContext.clientDatetime = context.clientDatetime;
+    }
+
+    // Return undefined if no client context data is available
+    return Object.keys(clientContext).length > 0 ? clientContext : undefined;
+  }
+
   private async ensureChatInitialized(
     sessionId: string,
-    bearerToken: string | null
+    bearerToken: string | null,
+    clientContext?: ClientContext
   ): Promise<void> {
     if (this.initializedSessions.has(sessionId)) {
       return;
@@ -37,9 +57,12 @@ export class AgentSwarmLanguageModel implements ILanguageModel {
     }
 
     try {
-      await this.agentSwarmService.initChat(bearerToken);
+      await this.agentSwarmService.initChat(bearerToken, clientContext);
       this.initializedSessions.add(sessionId);
-      logger.info(`Agent-swarm chat initialized for session: ${sessionId}`);
+      logger.info(`Agent-swarm chat initialized for session: ${sessionId}`, {
+        timezone: clientContext?.timezone,
+        clientDatetime: clientContext?.clientDatetime,
+      });
     } catch (error) {
       logger.error(
         `Failed to initialize agent-swarm chat for session ${sessionId}:`,
@@ -77,7 +100,16 @@ export class AgentSwarmLanguageModel implements ILanguageModel {
 
     // Add datetime context if available
     if (context?.datetime) {
-      message += `Current date and time: ${context.datetime}\n\n`;
+      message += `Current date and time: ${context.datetime}`;
+      if (context?.timezone) {
+        message += ` (timezone: ${context.timezone})`;
+      }
+      message += '\n\n';
+    }
+
+    // Add timezone context if available but datetime is not
+    if (!context?.datetime && context?.timezone) {
+      message += `User timezone: ${context.timezone}\n\n`;
     }
 
     // Add any additional context
@@ -103,9 +135,10 @@ export class AgentSwarmLanguageModel implements ILanguageModel {
         return 'I apologize, but the external tools service is not available right now. Please try again later.';
       }
 
-      // Extract bearer token and session ID from context
+      // Extract bearer token, session ID, and client context
       const bearerToken = this.extractBearerToken(context);
       const sessionId = this.getSessionId(context);
+      const clientContext = this.extractClientContext(context);
 
       // Check if authentication is available
       if (!bearerToken) {
@@ -119,9 +152,13 @@ export class AgentSwarmLanguageModel implements ILanguageModel {
         `Generating response using agent-swarm for session: ${sessionId}`
       );
       logger.info(`Current datetime: ${context?.datetime}`);
+      logger.info(`Client context:`, {
+        timezone: clientContext?.timezone,
+        clientDatetime: clientContext?.clientDatetime,
+      });
 
       // Ensure chat is initialized for this session
-      await this.ensureChatInitialized(sessionId, bearerToken);
+      await this.ensureChatInitialized(sessionId, bearerToken, clientContext);
 
       // Build contextual message with history and context
       const contextualMessage = this.buildContextualMessage(
@@ -130,10 +167,11 @@ export class AgentSwarmLanguageModel implements ILanguageModel {
         context
       );
 
-      // Send message to agent-swarm
+      // Send message to agent-swarm with client context
       const response = await this.agentSwarmService.chat(
         contextualMessage,
-        bearerToken
+        bearerToken,
+        clientContext
       );
 
       if (!response?.response) {

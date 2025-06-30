@@ -27,6 +27,11 @@ export interface HealthResponse {
   uptime?: number;
 }
 
+export interface ClientContext {
+  timezone?: string;
+  clientDatetime?: string;
+}
+
 export class AgentSwarmService {
   private baseURL: string;
   private streamTimeout: number;
@@ -44,7 +49,11 @@ export class AgentSwarmService {
     );
   }
 
-  private getHeaders(token?: string): Record<string, string> {
+  private getHeaders(
+    token?: string,
+    timezone?: string,
+    clientDatetime?: string
+  ): Record<string, string> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       Accept: 'application/json',
@@ -52,6 +61,14 @@ export class AgentSwarmService {
 
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    if (timezone) {
+      headers['X-Client-Timezone'] = timezone;
+    }
+
+    if (clientDatetime) {
+      headers['X-Client-Datetime'] = clientDatetime;
     }
 
     return headers;
@@ -114,14 +131,18 @@ export class AgentSwarmService {
     throw lastError!;
   }
 
-  async initChat(token: string): Promise<void> {
+  async initChat(token: string, context?: ClientContext): Promise<void> {
     try {
       logger.info('Initializing agent-swarm chat session');
 
       await this.retryRequest(async () => {
         const response = await fetch(`${this.baseURL}/chat/init`, {
           method: 'POST',
-          headers: this.getHeaders(token),
+          headers: this.getHeaders(
+            token,
+            context?.timezone,
+            context?.clientDatetime
+          ),
           body: JSON.stringify({}),
         });
 
@@ -135,14 +156,22 @@ export class AgentSwarmService {
     }
   }
 
-  async chat(message: string, token: string): Promise<ChatResponse> {
+  async chat(
+    message: string,
+    token: string,
+    context?: ClientContext
+  ): Promise<ChatResponse> {
     try {
       logger.info('Sending message to agent-swarm chat');
 
       return await this.retryRequest(async () => {
         const response = await fetch(`${this.baseURL}/chat`, {
           method: 'POST',
-          headers: this.getHeaders(token),
+          headers: this.getHeaders(
+            token,
+            context?.timezone,
+            context?.clientDatetime
+          ),
           body: JSON.stringify({ message }),
         });
 
@@ -154,7 +183,11 @@ export class AgentSwarmService {
     }
   }
 
-  async *chatStream(message: string, token: string): AsyncGenerator<string> {
+  async *chatStream(
+    message: string,
+    token: string,
+    context?: ClientContext
+  ): AsyncGenerator<string> {
     let lastEventId: string | null = null;
     let attempt = 1;
 
@@ -164,7 +197,11 @@ export class AgentSwarmService {
       try {
         logger.info(`Starting agent-swarm chat stream (attempt ${attempt})`);
 
-        const headers = this.getHeaders(token);
+        const headers = this.getHeaders(
+          token,
+          context?.timezone,
+          context?.clientDatetime
+        );
         headers['Accept'] = 'text/event-stream';
         headers['Cache-Control'] = 'no-cache';
 
@@ -289,14 +326,21 @@ export class AgentSwarmService {
     }
   }
 
-  async getHistory(token: string): Promise<HistoryResponse> {
+  async getHistory(
+    token: string,
+    context?: ClientContext
+  ): Promise<HistoryResponse> {
     try {
       logger.info('Fetching agent-swarm chat history');
 
       return await this.retryRequest(async () => {
         const response = await fetch(`${this.baseURL}/chat/history`, {
           method: 'GET',
-          headers: this.getHeaders(token),
+          headers: this.getHeaders(
+            token,
+            context?.timezone,
+            context?.clientDatetime
+          ),
         });
 
         return await this.handleResponse<HistoryResponse>(response);
@@ -307,14 +351,18 @@ export class AgentSwarmService {
     }
   }
 
-  async clearHistory(token: string): Promise<void> {
+  async clearHistory(token: string, context?: ClientContext): Promise<void> {
     try {
       logger.info('Clearing agent-swarm chat history');
 
       await this.retryRequest(async () => {
         const response = await fetch(`${this.baseURL}/chat/history`, {
           method: 'DELETE',
-          headers: this.getHeaders(token),
+          headers: this.getHeaders(
+            token,
+            context?.timezone,
+            context?.clientDatetime
+          ),
         });
 
         await this.handleResponse(response);
@@ -327,14 +375,21 @@ export class AgentSwarmService {
     }
   }
 
-  async getModels(token: string): Promise<ModelsResponse> {
+  async getModels(
+    token: string,
+    context?: ClientContext
+  ): Promise<ModelsResponse> {
     try {
       logger.info('Fetching available agent-swarm models');
 
       return await this.retryRequest(async () => {
         const response = await fetch(`${this.baseURL}/models`, {
           method: 'GET',
-          headers: this.getHeaders(token),
+          headers: this.getHeaders(
+            token,
+            context?.timezone,
+            context?.clientDatetime
+          ),
         });
 
         return await this.handleResponse<ModelsResponse>(response);
@@ -345,14 +400,18 @@ export class AgentSwarmService {
     }
   }
 
-  async healthCheck(): Promise<HealthResponse> {
+  async healthCheck(context?: ClientContext): Promise<HealthResponse> {
     try {
       logger.info('Performing agent-swarm health check');
 
       return await this.retryRequest(async () => {
         const response = await fetch(`${this.baseURL}/health`, {
           method: 'GET',
-          headers: this.getHeaders(),
+          headers: this.getHeaders(
+            undefined,
+            context?.timezone,
+            context?.clientDatetime
+          ),
         });
 
         return await this.handleResponse<HealthResponse>(response);

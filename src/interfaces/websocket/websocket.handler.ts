@@ -169,32 +169,79 @@ export class WebSocketHandler {
 
       // Send AI response and audio to client
       if (aiResponse) {
-        WebSocketGateway.send(ws, {
-          type: 'agent',
-          message: aiResponse,
-          speechAudio: audioResponse
-            ? audioResponse.toString('base64')
-            : undefined,
-        });
+        // Check if AI response indicates authentication is required
+        const responseText = aiResponse.toLowerCase();
+        const authRequiredPatterns = [
+          'sign in to your account',
+          'please authenticate',
+          'authentication required',
+          'login required',
+          'need to sign in',
+          'please sign in',
+          'authentication needed',
+          'access external tools',
+          'sign in first',
+          'authenticate to access',
+        ];
+
+        const requiresAuth = authRequiredPatterns.some((pattern) =>
+          responseText.includes(pattern)
+        );
+
+        if (requiresAuth) {
+          // Send as auth_required type to trigger login prompt
+          logger.info(
+            `[${sessionId}] AI response detected authentication requirement, sending auth_required message`
+          );
+          WebSocketGateway.send(ws, {
+            type: 'auth_required',
+            message: aiResponse,
+          });
+        } else {
+          // Send normal agent response
+          WebSocketGateway.send(ws, {
+            type: 'agent',
+            message: aiResponse,
+            speechAudio: audioResponse
+              ? audioResponse.toString('base64')
+              : undefined,
+          });
+        }
       }
     } catch (error) {
       logger.error(`[${sessionId}] Error processing audio:`, error);
 
       // Check if this is an authentication-related error
-      if (error instanceof Error && error.message.includes('Authentication')) {
-        WebSocketGateway.send(ws, {
-          type: 'auth_required',
-          message:
-            'I can help you with that once you sign in to your account. Please authenticate to access external tools.',
-        });
-      } else if (
-        error instanceof Error &&
-        error.message.includes('agent-swarm')
-      ) {
-        WebSocketGateway.sendError(
-          ws,
-          'AI service temporarily unavailable. Please try again.'
-        );
+      if (error instanceof Error) {
+        const errorMessage = error.message.toLowerCase();
+
+        // Enhanced authentication error detection patterns
+        if (
+          errorMessage.includes('authentication') ||
+          errorMessage.includes('401') ||
+          errorMessage.includes('403') ||
+          errorMessage.includes('authentication failed') ||
+          errorMessage.includes('access forbidden') ||
+          errorMessage.includes('bearer token') ||
+          errorMessage.includes('token expired') ||
+          errorMessage.includes('unauthorized') ||
+          errorMessage.includes('forbidden')
+        ) {
+          WebSocketGateway.send(ws, {
+            type: 'auth_required',
+            message: 'Authentication expired. Please sign in again.',
+          });
+        } else if (errorMessage.includes('agent-swarm')) {
+          WebSocketGateway.sendError(
+            ws,
+            'AI service temporarily unavailable. Please try again.'
+          );
+        } else {
+          WebSocketGateway.sendError(
+            ws,
+            'An error occurred while processing your request.'
+          );
+        }
       } else {
         WebSocketGateway.sendError(
           ws,
@@ -226,16 +273,26 @@ export class WebSocketHandler {
 
       // Send appropriate error message if connection is still open
       try {
+        const errorMessage = error.message.toLowerCase();
+
+        // Enhanced authentication error detection patterns
         if (
-          error.message.includes('authentication') ||
-          error.message.includes('token')
+          errorMessage.includes('authentication') ||
+          errorMessage.includes('token') ||
+          errorMessage.includes('401') ||
+          errorMessage.includes('403') ||
+          errorMessage.includes('authentication failed') ||
+          errorMessage.includes('access forbidden') ||
+          errorMessage.includes('bearer token') ||
+          errorMessage.includes('token expired') ||
+          errorMessage.includes('unauthorized') ||
+          errorMessage.includes('forbidden')
         ) {
           WebSocketGateway.send(ws, {
             type: 'auth_required',
-            message:
-              'Authentication is required for this feature. Please sign in to continue.',
+            message: 'Authentication expired. Please sign in again.',
           });
-        } else if (error.message.includes('agent-swarm')) {
+        } else if (errorMessage.includes('agent-swarm')) {
           WebSocketGateway.sendError(ws, 'AI service error occurred');
         } else {
           WebSocketGateway.sendError(ws, 'Connection error occurred');
