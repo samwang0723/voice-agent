@@ -5,10 +5,15 @@ export class Session {
   public context: any = {};
   public sttEngine: string = 'groq';
   public ttsEngine: string = 'groq';
+  public bearerToken?: string;
+  public swarmInitialized: boolean = false;
 
   constructor(
     public readonly id: string,
     public readonly ws: WSContext<WebSocketData>,
-    public conversationId: string
-  ) {}
-} 
+    public conversationId: string,
+    bearerToken?: string
+  ) {
+    this.bearerToken = bearerToken;
+  }
+}

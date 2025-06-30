@@ -20,10 +20,12 @@ export function createServer(webSocketHandler: WebSocketHandler) {
     '/ws',
     upgradeWebSocket((c) => {
       const sessionId = randomUUID(); // Generate sessionId on upgrade
+      const bearerToken = c.req.query('token');
+
       return {
         onOpen: (event, ws) => {
-          // Pass the context to onOpen
-          webSocketHandler.onOpen(ws, sessionId);
+          // Pass the context and bearer token to onOpen
+          webSocketHandler.onOpen(ws, sessionId, bearerToken);
         },
         onMessage: async (event, ws) => {
           const data = event.data;
@@ -50,4 +52,4 @@ export function createServer(webSocketHandler: WebSocketHandler) {
   logger.info('Server setup complete. Ready to accept connections.');
 
   return { app, webSocketCallbacks };
-} 
+}

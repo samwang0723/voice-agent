@@ -1,3 +1,11 @@
+// OAuth Configuration
+const AGENT_SWARM_API = 'http://localhost:8900/api/v1';
+const OAUTH_SCOPES = [
+  'https://www.googleapis.com/auth/userinfo.email',
+  'https://www.googleapis.com/auth/userinfo.profile',
+  'https://www.googleapis.com/auth/gmail.readonly',
+];
+
 // Global variables
 let ws = null;
 let vadInstance = null;
@@ -11,6 +19,7 @@ let currentAudioSource = null; // Use for Web Audio API source node
 // DOM elements
 const statusIndicator = document.getElementById('statusIndicator');
 const statusText = document.getElementById('statusText');
+const googleLoginBtn = document.getElementById('googleLoginBtn');
 
 const clearBtn = document.getElementById('clearBtn');
 const disconnectBtn = document.getElementById('disconnectBtn');
@@ -18,6 +27,171 @@ const connectBtn = document.getElementById('connectBtn');
 const messagesEl = document.getElementById('messages');
 const messagesContainer = document.querySelector('.messages-container');
 const ttsEngineSelect = document.getElementById('tts-engine-select');
+
+// OAuth Token Storage Utilities
+function storeToken(tokenData) {
+  try {
+    localStorage.setItem('oauth_token', JSON.stringify(tokenData));
+    if (googleLoginBtn) {
+      googleLoginBtn.classList.add('hidden');
+    }
+    addMessage('Authentication successful', 'system');
+    addMessage(`Bearer token: ${tokenData.access_token}`, 'system');
+  } catch (error) {
+    console.error('Failed to store token:', error);
+    addMessage('Failed to store authentication token', 'error');
+  }
+}
+
+function getStoredToken() {
+  try {
+    const tokenData = localStorage.getItem('oauth_token');
+    return tokenData ? JSON.parse(tokenData) : null;
+  } catch (error) {
+    console.error('Failed to retrieve token:', error);
+    return null;
+  }
+}
+
+function clearToken() {
+  try {
+    localStorage.removeItem('oauth_token');
+    if (googleLoginBtn) {
+      googleLoginBtn.classList.remove('hidden');
+    }
+    addMessage('Logged out successfully', 'system');
+  } catch (error) {
+    console.error('Failed to clear token:', error);
+    addMessage('Failed to clear authentication token', 'error');
+  }
+}
+
+// OAuth Flow Functions
+async function loginWithGoogle() {
+  try {
+    const state = crypto.randomUUID();
+    sessionStorage.setItem('oauth_state', state);
+
+    const redirectUri = `${window.location.origin}${window.location.pathname}`;
+
+    const initiateResponse = await fetch(
+      `${AGENT_SWARM_API}/auth/oauth/initiate`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          redirect_uri: redirectUri,
+          state: state,
+          scopes: OAUTH_SCOPES,
+        }),
+      }
+    );
+
+    if (!initiateResponse.ok) {
+      throw new Error(`OAuth initiate failed: ${initiateResponse.status}`);
+    }
+
+    const initiateData = await initiateResponse.json();
+
+    if (!initiateData.auth_url) {
+      throw new Error('No auth URL received from server');
+    }
+
+    addMessage('Redirecting to Google for authentication...', 'system');
+    window.location.href = initiateData.auth_url;
+  } catch (error) {
+    console.error('OAuth initiation failed:', error);
+    addMessage(`Authentication failed: ${error.message}`, 'error');
+  }
+}
+
+async function handleOAuthCallback() {
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const code = urlParams.get('code');
+    const state = urlParams.get('state');
+    const error = urlParams.get('error');
+
+    if (error) {
+      throw new Error(`OAuth error: ${error}`);
+    }
+
+    if (!code) {
+      return; // Not an OAuth callback
+    }
+
+    const storedState = sessionStorage.getItem('oauth_state');
+    if (!storedState || storedState !== state) {
+      throw new Error('Invalid OAuth state - possible CSRF attack');
+    }
+
+    sessionStorage.removeItem('oauth_state');
+
+    const redirectUri = `${window.location.origin}${window.location.pathname}`;
+
+    const tokenResponse = await fetch(`${AGENT_SWARM_API}/auth/oauth/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        code: code,
+        grant_type: 'authorization_code',
+        redirect_uri: redirectUri,
+        state: state,
+      }),
+    });
+
+    if (!tokenResponse.ok) {
+      throw new Error(`Token exchange failed: ${tokenResponse.status}`);
+    }
+
+    const tokenData = await tokenResponse.json();
+
+    if (!tokenData.access_token) {
+      throw new Error('No access token received');
+    }
+
+    storeToken(tokenData);
+
+    // Clean up URL parameters
+    const cleanUrl = window.location.origin + window.location.pathname;
+    window.history.replaceState({}, document.title, cleanUrl);
+  } catch (error) {
+    console.error('OAuth callback handling failed:', error);
+    addMessage(`Authentication failed: ${error.message}`, 'error');
+
+    // Clean up URL parameters even on error
+    const cleanUrl = window.location.origin + window.location.pathname;
+    window.history.replaceState({}, document.title, cleanUrl);
+  }
+}
+
+async function bootstrapAuth() {
+  try {
+    // Check for existing token
+    const existingToken = getStoredToken();
+    if (existingToken) {
+      if (googleLoginBtn) {
+        googleLoginBtn.classList.add('hidden');
+      }
+      addMessage('Already authenticated', 'system');
+      addMessage(`Bearer token: ${existingToken.access_token}`, 'system');
+      return;
+    }
+
+    // Handle OAuth callback if present
+    await handleOAuthCallback();
+  } catch (error) {
+    console.error('Auth bootstrap failed:', error);
+    addMessage(
+      `Authentication initialization failed: ${error.message}`,
+      'error'
+    );
+  }
+}
 
 // Configure ONNX Runtime for maximum browser compatibility
 function configureONNXRuntime() {
@@ -114,10 +288,14 @@ function stopListening() {
 function updateStatus(connected) {
   isConnected = connected;
   const appContainer = document.querySelector('.app-container');
+  const tokenData = getStoredToken();
+  const isAuthenticated = tokenData && tokenData.access_token;
 
   if (connected && isVadReady) {
     statusIndicator.className = 'status-indicator connected';
-    statusText.textContent = 'Ready to listen';
+    statusText.textContent = isAuthenticated
+      ? 'Ready to listen (Authenticated)'
+      : 'Ready to listen (Guest)';
     appContainer.classList.add('is-animating');
 
     // Show disconnect button, hide connect button
@@ -125,7 +303,9 @@ function updateStatus(connected) {
     connectBtn.classList.add('hidden');
   } else if (connected && !isVadReady) {
     statusIndicator.className = 'status-indicator connected';
-    statusText.textContent = 'Initializing voice detection...';
+    statusText.textContent = isAuthenticated
+      ? 'Initializing voice detection... (Authenticated)'
+      : 'Initializing voice detection... (Guest)';
     appContainer.classList.remove('is-animating');
 
     // Show disconnect button, hide connect button
@@ -222,8 +402,25 @@ function connectWebSocket() {
     return;
   }
 
+  // Extract bearer token from localStorage (optional)
+  const tokenData = getStoredToken();
+  const bearerToken =
+    tokenData && tokenData.access_token ? tokenData.access_token : null;
+
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${protocol}//${window.location.host}/ws`;
+  let wsUrl = `${protocol}//${window.location.host}/ws`;
+
+  // Include token parameter only if available
+  if (bearerToken) {
+    wsUrl += `?token=${encodeURIComponent(bearerToken)}`;
+    console.log('Connecting with authentication token...');
+  } else {
+    console.log('Connecting as guest (no authentication token)...');
+    addMessage(
+      'Connecting as guest - some features may require authentication',
+      'system'
+    );
+  }
 
   ws = new WebSocket(wsUrl);
 
@@ -267,6 +464,21 @@ function connectWebSocket() {
           // Play TTS audio if available
           if (data.speechAudio) {
             playTTSAudio(data.speechAudio);
+          }
+          break;
+        case 'auth_required':
+          addMessage(`${data.message}`, 'system');
+          addMessage(
+            '🔐 Please authenticate to access external tools and services',
+            'system'
+          );
+          // Show the login button if it's hidden
+          if (googleLoginBtn && googleLoginBtn.classList.contains('hidden')) {
+            googleLoginBtn.classList.remove('hidden');
+            addMessage(
+              'Click the "Sign in with Google" button to authenticate',
+              'system'
+            );
           }
           break;
         case 'error':
@@ -577,6 +789,11 @@ function setupEventListeners() {
   disconnectBtn.addEventListener('click', disconnect);
   connectBtn.addEventListener('click', connect);
 
+  // Add Google login button event listener
+  if (googleLoginBtn) {
+    googleLoginBtn.addEventListener('click', loginWithGoogle);
+  }
+
   // Add event listeners for engine selection changes
   const sttEngineSelect = document.getElementById('stt-engine-select');
   const ttsEngineSelect = document.getElementById('tts-engine-select');
@@ -604,10 +821,11 @@ function setupEventListeners() {
 }
 
 // Initialize everything when DOM is loaded
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
   configureONNXRuntime();
   initializeAudioContext();
   setupEventListeners();
+  await bootstrapAuth();
 });
 
 // Initialize app when page is fully loaded

@@ -98,6 +98,21 @@ export const ttsConfigs: Record<string, TextToSpeechConfig> = {
   },
 };
 
+// Agent-Swarm Configuration
+export interface AgentSwarmConfig {
+  baseURL: string;
+  streamTimeout: number;
+  maxRetries: number;
+  retryDelay: number;
+}
+
+export const agentSwarmConfig: AgentSwarmConfig = {
+  baseURL: process.env.AGENT_SWARM_API_URL || 'http://localhost:8900/api/v1',
+  streamTimeout: parseInt(process.env.AGENT_SWARM_STREAM_TIMEOUT || '30000'),
+  maxRetries: parseInt(process.env.AGENT_SWARM_MAX_RETRIES || '3'),
+  retryDelay: parseInt(process.env.AGENT_SWARM_RETRY_DELAY || '1000'),
+};
+
 // Function to get the current model from environment variables or a default
 export const getCurrentModelKey = (): string => {
   return process.env.LLM_MODEL || 'gemini-1.5-flash';
@@ -112,6 +127,11 @@ export const getCurrentModelConfig = (): ModelConfig => {
   return config;
 };
 
+// Lazy validation helper function for agent-swarm configuration
+export const isAgentSwarmConfigured = (): boolean => {
+  return !!agentSwarmConfig.baseURL;
+};
+
 // Log the current model configuration on startup
 const currentModelInfo = getCurrentModelConfig();
 logger.info(
@@ -122,4 +142,7 @@ if (!currentModelInfo.apiKey) {
   logger.warn(
     `API key for ${currentModelInfo.provider} is not configured. AI features may not work.`
   );
-} 
+}
+
+// Log dual-AI runtime initialization
+logger.info('Dual-AI runtime initialized');
