@@ -6,9 +6,6 @@ import type {
 import {
   intentPatterns,
   keywordWeights,
-  getToolCategories,
-  isValidToolCategory,
-  getPatternsForCategory,
   getKeywordWeight,
 } from '../../config/intent/patterns';
 
@@ -28,7 +25,7 @@ export class PatternIntentDetector implements IToolIntentDetector {
     // Initialize with default patterns and weights from configuration
     this.patterns = { ...intentPatterns };
     this.weights = { ...keywordWeights };
-    
+
     logger.info(
       `[PatternIntentDetector] Initialized with ${Object.keys(this.patterns).length} tool categories:`,
       Object.keys(this.patterns)
@@ -67,12 +64,15 @@ export class PatternIntentDetector implements IToolIntentDetector {
 
     // Check each tool category for pattern and keyword matches
     for (const [toolName, patterns] of Object.entries(this.patterns)) {
-      const patternScore = this.calculatePatternScore(normalizedTranscript, patterns);
+      const patternScore = this.calculatePatternScore(
+        normalizedTranscript,
+        patterns
+      );
       const keywordScore = this.calculateKeywordScore(terms);
-      
+
       // Combine pattern and keyword scores with weighted formula
       // Pattern score has higher weight (0.7) as it's more specific
-      const combinedScore = (patternScore * 0.7) + (keywordScore * 0.3);
+      const combinedScore = patternScore * 0.7 + keywordScore * 0.3;
 
       if (combinedScore > 0) {
         detectedTools.push(toolName);
@@ -93,8 +93,8 @@ export class PatternIntentDetector implements IToolIntentDetector {
 
     // Calculate overall confidence as the maximum combined score
     // This represents the strongest intent signal detected
-    const confidence = requiresTools 
-      ? Math.min(Math.max(...Object.values(toolScores)), 1.0) 
+    const confidence = requiresTools
+      ? Math.min(Math.max(...Object.values(toolScores)), 1.0)
       : 0;
 
     const result: ToolIntentResult = {
@@ -110,7 +110,10 @@ export class PatternIntentDetector implements IToolIntentDetector {
         detectedTools,
         confidence: confidence.toFixed(3),
         toolScores: Object.fromEntries(
-          Object.entries(toolScores).map(([tool, score]) => [tool, score.toFixed(3)])
+          Object.entries(toolScores).map(([tool, score]) => [
+            tool,
+            score.toFixed(3),
+          ])
         ),
       });
     } else {
@@ -147,7 +150,9 @@ export class PatternIntentDetector implements IToolIntentDetector {
 
     // Normalize score: more matches = higher confidence, capped at 1.0
     // Use logarithmic scaling to prevent over-confidence with many matches
-    return matches > 0 ? Math.min(Math.log(matches + 1) / Math.log(patterns.length + 1), 1.0) : 0;
+    return matches > 0
+      ? Math.min(Math.log(matches + 1) / Math.log(patterns.length + 1), 1.0)
+      : 0;
   }
 
   /**
@@ -163,7 +168,7 @@ export class PatternIntentDetector implements IToolIntentDetector {
     for (const term of terms) {
       const normalizedTerm = term.toLowerCase();
       const weight = getKeywordWeight(normalizedTerm);
-      
+
       if (weight > 0) {
         totalWeight += weight;
         matchedKeywords.push({ keyword: normalizedTerm, weight });
@@ -173,17 +178,21 @@ export class PatternIntentDetector implements IToolIntentDetector {
     // Calculate maximum possible weight for normalization
     // Use the top 5 highest weights as a reasonable maximum
     const sortedWeights = Object.values(this.weights).sort((a, b) => b - a);
-    maxPossibleWeight = sortedWeights.slice(0, 5).reduce((sum, weight) => sum + weight, 0);
+    maxPossibleWeight = sortedWeights
+      .slice(0, 5)
+      .reduce((sum, weight) => sum + weight, 0);
 
     if (matchedKeywords.length > 0) {
       logger.info(
         `[PatternIntentDetector] Keyword matches found:`,
-        matchedKeywords.slice(0, 5).map(k => `${k.keyword}(${k.weight})`)
+        matchedKeywords.slice(0, 5).map((k) => `${k.keyword}(${k.weight})`)
       );
     }
 
     // Normalize score based on maximum possible weight
-    return maxPossibleWeight > 0 ? Math.min(totalWeight / maxPossibleWeight, 1.0) : 0;
+    return maxPossibleWeight > 0
+      ? Math.min(totalWeight / maxPossibleWeight, 1.0)
+      : 0;
   }
 
   /**
@@ -232,13 +241,13 @@ export class PatternIntentDetector implements IToolIntentDetector {
    * Comprehensive method for adding new tool support at runtime.
    */
   addToolCategory(
-    toolName: string, 
-    patterns: RegExp[], 
+    toolName: string,
+    patterns: RegExp[],
     keywords: Record<string, number> = {}
   ): void {
     this.patterns[toolName] = patterns;
     Object.assign(this.weights, keywords);
-    
+
     logger.info(
       `[PatternIntentDetector] Added new tool category '${toolName}' with ${patterns.length} patterns and ${Object.keys(keywords).length} keywords`
     );
@@ -251,7 +260,9 @@ export class PatternIntentDetector implements IToolIntentDetector {
   removeToolCategory(toolName: string): boolean {
     if (this.patterns[toolName]) {
       delete this.patterns[toolName];
-      logger.info(`[PatternIntentDetector] Removed tool category '${toolName}'`);
+      logger.info(
+        `[PatternIntentDetector] Removed tool category '${toolName}'`
+      );
       return true;
     }
     return false;
@@ -267,16 +278,25 @@ export class PatternIntentDetector implements IToolIntentDetector {
     sentences: string[];
     patternMatches: Record<string, { matches: number; patterns: string[] }>;
     keywordMatches: Array<{ keyword: string; weight: number }>;
-    toolScores: Record<string, { patternScore: number; keywordScore: number; combinedScore: number }>;
+    toolScores: Record<
+      string,
+      { patternScore: number; keywordScore: number; combinedScore: number }
+    >;
   }> {
     const normalizedTranscript = transcript.toLowerCase().trim();
     const doc = nlp(normalizedTranscript);
     const terms = doc.terms().out('array');
     const sentences = doc.sentences().out('array');
 
-    const patternMatches: Record<string, { matches: number; patterns: string[] }> = {};
+    const patternMatches: Record<
+      string,
+      { matches: number; patterns: string[] }
+    > = {};
     const keywordMatches: Array<{ keyword: string; weight: number }> = [];
-    const toolScores: Record<string, { patternScore: number; keywordScore: number; combinedScore: number }> = {};
+    const toolScores: Record<
+      string,
+      { patternScore: number; keywordScore: number; combinedScore: number }
+    > = {};
 
     // Analyze pattern matches for each tool
     for (const [toolName, patterns] of Object.entries(this.patterns)) {
@@ -292,9 +312,12 @@ export class PatternIntentDetector implements IToolIntentDetector {
 
       patternMatches[toolName] = { matches, patterns: matchedPatterns };
 
-      const patternScore = this.calculatePatternScore(normalizedTranscript, patterns);
+      const patternScore = this.calculatePatternScore(
+        normalizedTranscript,
+        patterns
+      );
       const keywordScore = this.calculateKeywordScore(terms);
-      const combinedScore = (patternScore * 0.7) + (keywordScore * 0.3);
+      const combinedScore = patternScore * 0.7 + keywordScore * 0.3;
 
       toolScores[toolName] = { patternScore, keywordScore, combinedScore };
     }
