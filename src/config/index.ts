@@ -13,6 +13,8 @@ export type ModelProvider =
   | 'cartesia'
   | 'deepgram';
 
+export type IntentDetectorMode = 'keyword' | 'pattern' | 'hybrid';
+
 export interface ModelConfig {
   provider: ModelProvider;
   modelName: string;
@@ -106,11 +108,22 @@ export interface AgentSwarmConfig {
   retryDelay: number;
 }
 
+export interface IntentDetectorConfig {
+  mode: IntentDetectorMode;
+  confidenceThreshold: number;
+}
+
 export const agentSwarmConfig: AgentSwarmConfig = {
   baseURL: process.env.AGENT_SWARM_API_URL || 'http://localhost:8900/api/v1',
   streamTimeout: parseInt(process.env.AGENT_SWARM_STREAM_TIMEOUT || '30000'),
   maxRetries: parseInt(process.env.AGENT_SWARM_MAX_RETRIES || '3'),
   retryDelay: parseInt(process.env.AGENT_SWARM_RETRY_DELAY || '1000'),
+};
+
+// Intent Detector Configuration
+export const intentDetectorConfig: IntentDetectorConfig = {
+  mode: (process.env.INTENT_DETECTOR_MODE as IntentDetectorMode) || 'keyword',
+  confidenceThreshold: parseFloat(process.env.INTENT_CONFIDENCE_THRESHOLD || '0.5'),
 };
 
 // Function to get the current model from environment variables or a default
@@ -130,6 +143,11 @@ export const getCurrentModelConfig = (): ModelConfig => {
 // Lazy validation helper function for agent-swarm configuration
 export const isAgentSwarmConfigured = (): boolean => {
   return !!agentSwarmConfig.baseURL;
+};
+
+// Function to get the current intent detector mode
+export const getIntentDetectorMode = (): IntentDetectorMode => {
+  return intentDetectorConfig.mode;
 };
 
 // Log the current model configuration on startup

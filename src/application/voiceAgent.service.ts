@@ -66,7 +66,12 @@ export class VoiceAgentService {
     conversation.addMessage(new Message('user', transcript));
 
     // 4. Detect tool intent from transcript
+    const intentDetectionStartTime = Date.now();
     const intentResult = await this.intentDetector.detectToolIntent(transcript);
+    const intentDetectionDuration = Date.now() - intentDetectionStartTime;
+    logger.info(
+      `[${conversationId}] Intent detection took ${intentDetectionDuration}ms.`
+    );
     logger.debug(`[${conversationId}] Tool intent detection result:`, {
       requiresTools: intentResult.requiresTools,
       detectedTools: intentResult.detectedTools,

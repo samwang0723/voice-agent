@@ -2,6 +2,7 @@ import type {
   IToolIntentDetector,
   ToolIntentResult,
 } from '../../domain/intent/intentDetector.service';
+import logger from '../logger';
 
 /**
  * Keyword-based implementation of tool intent detection.
@@ -106,7 +107,7 @@ export class KeywordIntentDetector implements IToolIntentDetector {
         totalMatches += matches;
         maxMatches = Math.max(maxMatches, matches);
 
-        console.log(
+        logger.info(
           `[KeywordIntentDetector] Detected ${toolName} tool intent with ${matches} keyword matches:`,
           matchedKeywords
         );

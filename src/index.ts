@@ -8,6 +8,7 @@ import {
   serverConfig,
   agentSwarmConfig,
   isAgentSwarmConfigured,
+  getIntentDetectorMode,
 } from './config';
 import { GoogleLanguageModel } from './infrastructure/ai/google.service';
 import { AgentSwarmService } from './infrastructure/ai/agentSwarm.service';
@@ -19,6 +20,9 @@ import { VoiceAgentService } from './application/voiceAgent.service';
 import { createServer } from './interfaces/http/server.ts';
 import { WebSocketHandler } from './interfaces/websocket/websocket.handler';
 import { KeywordIntentDetector } from './infrastructure/intent/keywordIntentDetector.service';
+import { PatternIntentDetector } from './infrastructure/intent/patternIntentDetector.service';
+import { CompositeIntentDetector } from './infrastructure/intent/compositeIntentDetector.service';
+import type { IToolIntentDetector } from './domain/intent/intentDetector.service';
 
 // 1. Initialize repositories
 const sessionRepository = new InMemorySessionRepository();
@@ -60,9 +64,34 @@ try {
   process.exit(1);
 }
 
-// Initialize intent detector
-const intentDetector = new KeywordIntentDetector();
-logger.info('Keyword intent detector initialized');
+// Initialize intent detector based on configuration
+function createIntentDetector(): IToolIntentDetector {
+  const mode = getIntentDetectorMode();
+  
+  switch (mode) {
+    case 'keyword':
+      logger.info('Initializing keyword-based intent detector');
+      return new KeywordIntentDetector();
+      
+    case 'pattern':
+      logger.info('Initializing pattern-based intent detector');
+      return new PatternIntentDetector();
+      
+    case 'hybrid':
+      logger.info('Initializing hybrid intent detector (keyword + pattern)');
+      return new CompositeIntentDetector([
+        new KeywordIntentDetector(),
+        new PatternIntentDetector()
+      ]);
+      
+    default:
+      logger.warn(`Unknown intent detector mode '${mode}', falling back to keyword detector`);
+      return new KeywordIntentDetector();
+  }
+}
+
+const intentDetector = createIntentDetector();
+logger.info(`Intent detector initialized in '${getIntentDetectorMode()}' mode`);
 
 logger.info('Dual-AI runtime initialization complete');
 logger.info(
