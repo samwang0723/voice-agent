@@ -37,15 +37,26 @@ export class VoiceAgentService {
     aiResponse: string;
     audioResponse: Buffer | null;
   }> {
+    const overallStartTime = Date.now();
+    logger.info(
+      `[${conversationId}] Starting audio processing with STT: ${sttEngine}, TTS: ${ttsEngine}`
+    );
+
     // 1. Get or create conversation
+    const conversationStartTime = Date.now();
     let conversation =
       await this.conversationRepository.findById(conversationId);
     if (!conversation) {
       conversation = new Conversation(conversationId);
       await this.conversationRepository.save(conversation);
     }
+    const conversationDuration = Date.now() - conversationStartTime;
+    logger.debug(
+      `[${conversationId}] Conversation setup took ${conversationDuration}ms`
+    );
 
     // 2. Transcribe audio
+    const transcriptionStartTime = Date.now();
     const sttConfig = transcriptionConfigs[sttEngine];
     let audioBuffer = audioChunk;
     if (sttConfig?.inputType === 'container') {
@@ -55,8 +66,17 @@ export class VoiceAgentService {
     // 3. Transcribe audio using the selected service
     const transcriptionService = getTranscriptionService(sttEngine);
     const transcript = await transcriptionService.transcribe(audioBuffer);
+    const transcriptionDuration = Date.now() - transcriptionStartTime;
+    logger.info(
+      `[${conversationId}] Transcription (${sttEngine}) took ${transcriptionDuration}ms`
+    );
     logger.debug(`[${conversationId}] Transcript: "${transcript}"`);
+
     if (!transcript || transcript.startsWith('[')) {
+      const overallDuration = Date.now() - overallStartTime;
+      logger.info(
+        `[${conversationId}] Processing completed early (empty/invalid transcript) in ${overallDuration}ms`
+      );
       return {
         transcript,
         aiResponse: '',
@@ -79,7 +99,9 @@ export class VoiceAgentService {
     });
 
     // 5. Generate AI response with dynamic routing
+    const aiResponseStartTime = Date.now();
     let aiResponse: string;
+    let aiResponseDuration = 0;
     const isAuthenticated = !!context?.session?.bearerToken;
 
     logger.debug(`[${conversationId}] Authentication check:`, {
@@ -141,12 +163,14 @@ export class VoiceAgentService {
         logger.debug(`[${conversationId}] Local AI Response: "${aiResponse}"`);
       }
 
+      aiResponseDuration = Date.now() - aiResponseStartTime;
       logger.info(
-        `[${conversationId}] AI backend selected: ${selectedBackend}`
+        `[${conversationId}] AI response generation (${selectedBackend}) took ${aiResponseDuration}ms`
       );
     } catch (error) {
+      aiResponseDuration = Date.now() - aiResponseStartTime;
       logger.error(
-        `[${conversationId}] AI response generation failed with ${selectedBackend} backend:`,
+        `[${conversationId}] AI response generation failed with ${selectedBackend} backend after ${aiResponseDuration}ms:`,
         error
       );
 
@@ -155,18 +179,21 @@ export class VoiceAgentService {
         logger.info(
           `[${conversationId}] Agent-swarm failed, attempting fallback to local AI`
         );
+        const fallbackStartTime = Date.now();
         try {
           aiResponse = await this.localLanguageModel.generateResponse(
             conversation.getHistory(),
             transcript,
             context
           );
+          const fallbackDuration = Date.now() - fallbackStartTime;
           logger.info(
-            `[${conversationId}] Successfully generated response using local AI fallback`
+            `[${conversationId}] Successfully generated response using local AI fallback in ${fallbackDuration}ms`
           );
         } catch (fallbackError) {
+          const fallbackDuration = Date.now() - fallbackStartTime;
           logger.error(
-            `[${conversationId}] Local AI fallback also failed:`,
+            `[${conversationId}] Local AI fallback also failed after ${fallbackDuration}ms:`,
             fallbackError
           );
           aiResponse =
@@ -199,8 +226,13 @@ export class VoiceAgentService {
     conversation.addMessage(new Message('assistant', aiResponse));
 
     // 6. Synthesize audio response using the selected service
+    const ttsStartTime = Date.now();
     const ttsService = getTextToSpeechService(ttsEngine);
     const audioResponse = await ttsService.synthesize(aiResponse);
+    const ttsDuration = Date.now() - ttsStartTime;
+    logger.info(
+      `[${conversationId}] Text-to-speech synthesis (${ttsEngine}) took ${ttsDuration}ms`
+    );
     logger.debug(
       `[${conversationId}] Synthesized audio response: ${
         audioResponse ? audioResponse.length : 0
@@ -208,7 +240,18 @@ export class VoiceAgentService {
     );
 
     // 7. Save conversation
+    const saveStartTime = Date.now();
     await this.conversationRepository.save(conversation);
+    const saveDuration = Date.now() - saveStartTime;
+    logger.debug(
+      `[${conversationId}] Conversation save took ${saveDuration}ms`
+    );
+
+    // Log overall processing summary
+    const overallDuration = Date.now() - overallStartTime;
+    logger.info(
+      `[${conversationId}] Total audio processing completed in ${overallDuration}ms - Breakdown: Transcription: ${transcriptionDuration}ms, Intent: ${intentDetectionDuration}ms, AI: ${aiResponseDuration || 'N/A'}ms, TTS: ${ttsDuration}ms`
+    );
 
     return { transcript, aiResponse, audioResponse };
   }
