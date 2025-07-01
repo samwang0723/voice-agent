@@ -206,6 +206,7 @@ body {
   border-radius: 8px;
   padding: 1rem;
   margin: 0.5rem 0;
+  width: 40%;
 }
 
 .message.login-prompt .content {
@@ -215,12 +216,14 @@ body {
   gap: 0.75rem;
   color: #fff;
   font-size: 0.9rem;
+  padding-top: 1rem;
 }
 
 /* Google Login Button in Message Context */
 .message.login-prompt .google-login-btn {
   margin-top: 0;
   align-self: center;
+  margin-bottom: 1rem;
 }
 
 .timestamp {
