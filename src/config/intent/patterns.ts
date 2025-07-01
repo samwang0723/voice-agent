@@ -117,6 +117,39 @@ export const intentPatterns: Record<string, RegExp[]> = {
     /\b(?:italian|chinese|mexican|thai|indian)\s+restaurant\b/i,
     /\brestaurant\s+(?:recommendation|suggestion|booking|reservation)\b/i,
   ],
+
+  /**
+   * Web search-related intent patterns
+   * Matches expressions for searching the web, looking up information, and research
+   */
+  websearch: [
+    // Direct web search actions
+    /\b(?:search|google|bing)\s+(?:for|about|the\s+web|online|internet)\b/i,
+    /\bsearch\s+(?:the\s+)?(?:web|internet|online)\s+for\b/i,
+    /\b(?:google|search\s+for)\s+(?:information\s+)?(?:about|on)\b/i,
+    /\bweb\s+search\s+(?:for|about|on)\b/i,
+
+    // Information seeking patterns
+    /\b(?:what\s+is|what\s+are|tell\s+me\s+about|explain)\s+(?:a\s+|an\s+|the\s+)?\w+/i,
+    /\b(?:how\s+(?:do|does|can|to)|why\s+(?:is|are|do|does))\b/i,
+    /\b(?:when\s+(?:is|was|did|will)|where\s+(?:is|was|can|do))\b/i,
+    /\b(?:who\s+(?:is|was|are)|which\s+(?:is|are|one))\b/i,
+
+    // Research and lookup patterns
+    /\b(?:look\s+up|find\s+out|research|investigate)\s+(?:about|on|information\s+about)\b/i,
+    /\b(?:find|get)\s+(?:information|details|facts)\s+(?:about|on|regarding)\b/i,
+    /\b(?:learn|know)\s+(?:more\s+)?about\b/i,
+
+    // Information request patterns
+    /\bcan\s+you\s+(?:search|look\s+up|find|tell\s+me)\b/i,
+    /\bi\s+(?:want\s+to\s+|need\s+to\s+)?(?:know|learn|find\s+out)\s+(?:about|more\s+about)\b/i,
+    /\b(?:show\s+me|give\s+me)\s+(?:information|details|facts)\s+(?:about|on)\b/i,
+
+    // Current events and news
+    /\b(?:latest|recent|current)\s+(?:news|updates|information)\s+(?:about|on)\b/i,
+    /\bwhat(?:'s|\s+is)\s+(?:happening|going\s+on)\s+(?:with|in|about)\b/i,
+    /\b(?:news|updates)\s+(?:about|on|regarding)\b/i,
+  ],
 };
 
 /**
@@ -171,6 +204,20 @@ export const keywordWeights: Record<string, number> = {
   menu: 0.6,
   cuisine: 0.6,
   dine: 0.7,
+
+  // Web search-specific high-confidence keywords
+  search: 0.8,
+  google: 0.9,
+  bing: 0.8,
+  websearch: 0.9,
+  lookup: 0.7,
+  research: 0.8,
+  investigate: 0.7,
+  information: 0.7,
+  facts: 0.6,
+  details: 0.6,
+  explain: 0.7,
+  learn: 0.6,
 
   // Removed all generic time-related and action verb keywords that cause false positives
   // Only keeping highly specific action verbs

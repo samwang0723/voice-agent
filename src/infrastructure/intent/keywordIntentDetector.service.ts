@@ -70,6 +70,28 @@ export class KeywordIntentDetector implements IToolIntentDetector {
       'table for',
       'dinner reservation',
     ],
+    websearch: [
+      'google',
+      'search the web',
+      'web search',
+      'search online',
+      'internet search',
+      'bing',
+      'search engine',
+      'lookup online',
+      'look up online',
+      'research online',
+      'find on web',
+      'find on internet',
+      'latest news',
+      'current news',
+      'recent news',
+      'news about',
+      'search news',
+      'google search',
+      'web lookup',
+      'online research',
+    ],
   };
 
   /**
