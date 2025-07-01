@@ -1,5 +1,5 @@
 // OAuth Configuration
-const AGENT_SWARM_API = 'http://localhost:8900/api/v1';
+const AGENT_SWARM_API = 'https://9d62-36-232-111-200.ngrok-free.app/api/v1';
 const OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/userinfo.email',
   'https://www.googleapis.com/auth/userinfo.profile',
@@ -649,13 +649,12 @@ async function initializeVAD() {
     const vadConfigs = [
       {
         model: 'v5',
-        positiveSpeechThreshold: 0.5,
-        negativeSpeechThreshold: 0.35,
-        userSpeakingThreshold: 0.6,
-        redemptionFrames: 3,
-        preSpeechPadFrames: 1,
-        minSpeechFrames: 9,
-        redemptionFrames: 24,
+        positiveSpeechThreshold: 0.3,
+        negativeSpeechThreshold: 0.25,
+        userSpeakingThreshold: 0.4,
+        preSpeechPadFrames: 2,
+        minSpeechFrames: 3,
+        redemptionFrames: 8,
         frameSamples: 512,
       },
       // Simplest configuration first
