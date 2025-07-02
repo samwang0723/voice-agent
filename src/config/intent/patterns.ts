@@ -144,6 +144,61 @@ export const intentPatterns: Record<string, RegExp[]> = {
     /\bwhat(?:'s|\s+is)\s+(?:happening|going\s+on)\s+(?:with|in|about)\b/i,
     /\b(?:news|updates)\s+(?:about|on|regarding)\b/i,
   ],
+
+  /**
+   * Confluence-related intent patterns
+   * Matches expressions for searching documentation, creating pages, and wiki management
+   */
+  confluence: [
+    // Direct Confluence actions - MUST contain "confluence" keyword
+    /\b(?:search|find|look\s+up)\s+(?:in\s+)?confluence\b/i,
+    /\bconfluence\s+(?:search|page|document|space)\b/i,
+    /\b(?:check|open|view)\s+confluence\b/i,
+
+    // Documentation and wiki actions - MUST contain confluence-specific terms
+    /\b(?:create|write|edit|update)\s+(?:a\s+)?(?:confluence\s+)?(?:page|wiki|documentation)\b/i,
+    /\b(?:search|find)\s+(?:the\s+)?(?:wiki|documentation|confluence\s+page)\b/i,
+    /\b(?:look\s+up|find)\s+(?:in\s+)?(?:the\s+)?(?:wiki|documentation|confluence)\b/i,
+
+    // Space and page management - confluence-specific terms
+    /\b(?:confluence\s+)?space\s+(?:search|documentation|pages)\b/i,
+    /\b(?:wiki\s+)?page\s+(?:in\s+confluence|documentation|search)\b/i,
+    /\bdocumentation\s+(?:search|page|space|confluence)\b/i,
+
+    // Confluence-specific expressions
+    /\b(?:team\s+)?(?:wiki|documentation)\s+(?:page|search|confluence)\b/i,
+    /\bconfluence\s+(?:documentation|search|page|space)\b/i,
+  ],
+
+  /**
+   * Jira-related intent patterns
+   * Matches expressions for ticket management, issue tracking, and sprint activities
+   */
+  jira: [
+    // Direct Jira actions - MUST contain "jira" keyword
+    /\b(?:search|find|look\s+up)\s+(?:in\s+)?jira\b/i,
+    /\bjira\s+(?:ticket|issue|search|board)\b/i,
+    /\b(?:check|open|view)\s+jira\b/i,
+
+    // Ticket and issue management - MUST contain jira-specific terms
+    /\b(?:create|make|open)\s+(?:a\s+)?(?:jira\s+)?(?:ticket|issue)\b/i,
+    /\b(?:update|edit|modify)\s+(?:the\s+)?(?:jira\s+)?(?:ticket|issue)\b/i,
+    /\b(?:close|resolve|complete)\s+(?:the\s+)?(?:jira\s+)?(?:ticket|issue)\b/i,
+
+    // Status and assignment - jira-specific terms
+    /\b(?:assign|reassign)\s+(?:the\s+)?(?:jira\s+)?(?:ticket|issue)\b/i,
+    /\b(?:change|update)\s+(?:ticket|issue)\s+status\b/i,
+    /\b(?:jira\s+)?(?:ticket|issue)\s+(?:status|priority|assignee)\b/i,
+
+    // Sprint and board management - jira-specific terms
+    /\b(?:jira\s+)?(?:sprint|backlog|board|kanban)\b/i,
+    /\b(?:add\s+to|move\s+to)\s+(?:sprint|backlog|jira\s+board)\b/i,
+    /\b(?:epic|story|task|bug)\s+(?:in\s+jira|ticket|issue)\b/i,
+
+    // Jira-specific expressions
+    /\bjira\s+(?:search|query|filter|board|dashboard)\b/i,
+    /\b(?:search|find)\s+(?:jira\s+)?(?:tickets|issues)\b/i,
+  ],
 };
 
 /**
@@ -207,6 +262,25 @@ export const keywordWeights: Record<string, number> = {
   lookup: 0.7,
   research: 0.8,
   investigate: 0.7,
+
+  // Confluence-specific high-confidence keywords (MUST be confluence-specific)
+  confluence: 0.9,
+  wiki: 0.8,
+  documentation: 0.7,
+  space: 0.6, // Lower because it can be ambiguous
+  page: 0.5, // Lower because it can be ambiguous
+
+  // Jira-specific high-confidence keywords (MUST be jira-specific)
+  jira: 0.9,
+  ticket: 0.8,
+  issue: 0.7, // Lower because it can be ambiguous
+  sprint: 0.8,
+  backlog: 0.8,
+  kanban: 0.8,
+  epic: 0.7,
+  story: 0.6, // Lower because it can be ambiguous
+  assignee: 0.7,
+  priority: 0.6, // Lower because it can be ambiguous
 
   // Removed all generic time-related and action verb keywords that cause false positives
   // Only keeping highly specific action verbs

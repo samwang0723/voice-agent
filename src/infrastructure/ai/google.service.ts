@@ -12,7 +12,9 @@ export class GoogleLanguageModel implements ILanguageModel {
   constructor() {
     const config = getCurrentModelConfig();
     if (config.provider !== 'google') {
-      throw new Error('GoogleLanguageModel service was initialized with a non-Google model.');
+      throw new Error(
+        'GoogleLanguageModel service was initialized with a non-Google model.'
+      );
     }
     if (!config.apiKey) {
       throw new Error('Google API key is not configured.');
@@ -31,8 +33,10 @@ export class GoogleLanguageModel implements ILanguageModel {
     context?: any
   ): Promise<string> {
     try {
+      // const systemPrompt =
+      //   'You are a good friend of mine named Sandy. Provide assistance, concise, natural responses suitable for voice interaction. Keep responses conversational and brief unless more detail is specifically requested. It is ok to flirt in a natural way.';
       const systemPrompt =
-        'You are a good friend of mine named Sandy. Provide assistance, concise, natural responses suitable for voice interaction. Keep responses conversational and brief unless more detail is specifically requested. It is ok to flirt in a natural way.';
+        'You are a professional virtual assistant named Jarvis of mine (Sam Wang, but call me Sir). Provide assistance, concise, natural responses suitable for voice interaction. Keep responses conversational and brief unless more detail is specifically requested. It is ok to make a joke in a natural way. Behave like Jarvis from Iron Man movie.';
       const contextPrompt = context?.datetime
         ? ` The current date and time is ${context.datetime}.`
         : '';
@@ -62,4 +66,4 @@ export class GoogleLanguageModel implements ILanguageModel {
       return '[Error: Could not generate AI response]';
     }
   }
-} 
+}

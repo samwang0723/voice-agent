@@ -9,7 +9,9 @@ import logger from '../logger';
 // Helper function to get the Groq client
 const getGroqClient = (apiKey: string | undefined) => {
   if (!apiKey) {
-    logger.warn('GROQ_API_KEY is not set. Groq services will not be available.');
+    logger.warn(
+      'GROQ_API_KEY is not set. Groq services will not be available.'
+    );
     return null;
   }
   return new Groq({ apiKey });
@@ -69,7 +71,7 @@ export class GroqTextToSpeechService implements ITextToSpeechService {
     try {
       const response = await groq.audio.speech.create({
         model: config.modelName,
-        voice: 'Cheyenne-PlayAI',
+        voice: 'Basil-PlayAI', //Basil-PlayAI, Cheyenne-PlayAI
         input: text,
         response_format: 'wav',
       });
@@ -81,4 +83,4 @@ export class GroqTextToSpeechService implements ITextToSpeechService {
       return null;
     }
   }
-} 
+}

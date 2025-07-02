@@ -54,7 +54,6 @@ const disconnectBtn = document.getElementById('disconnectBtn');
 const connectBtn = document.getElementById('connectBtn');
 const messagesEl = document.getElementById('messages');
 const messagesContainer = document.querySelector('.messages-container');
-const ttsEngineSelect = document.getElementById('tts-engine-select');
 
 // Function to get client timezone using browser API
 function getClientTimezone() {

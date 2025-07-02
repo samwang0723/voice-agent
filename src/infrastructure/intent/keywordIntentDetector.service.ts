@@ -92,7 +92,95 @@ export class KeywordIntentDetector implements IToolIntentDetector {
       'web lookup',
       'online research',
     ],
+    confluence: [
+      'confluence',
+      'confluence search',
+      'confluence page',
+      'confluence space',
+      'search confluence',
+      'find in confluence',
+      'confluence documentation',
+      'wiki page',
+      'wiki search',
+      'team wiki',
+      'documentation search',
+      'confluence wiki',
+      'search wiki',
+      'wiki documentation',
+      'create confluence page',
+      'edit confluence page',
+      'update confluence page',
+      'confluence space search',
+      'team documentation',
+      'check on confluence',
+      'check confluence',
+      'look at confluence',
+      'look on confluence',
+      'find on confluence',
+      'check the confluence',
+      'look in confluence',
+      'confluence docs',
+      'confluence document',
+    ],
+    jira: [
+      'jira',
+      'jira ticket',
+      'jira issue',
+      'jira search',
+      'search jira',
+      'find in jira',
+      'jira board',
+      'create ticket',
+      'create issue',
+      'jira sprint',
+      'sprint planning',
+      'backlog',
+      'jira backlog',
+      'kanban board',
+      'jira kanban',
+      'assign ticket',
+      'ticket status',
+      'issue status',
+      'jira dashboard',
+      'epic',
+      'user story',
+      'jira query',
+      'jira filter',
+      'close ticket',
+      'resolve issue',
+      'update ticket',
+      'jira assignee',
+      'check on jira',
+      'check jira',
+      'look at jira',
+      'look on jira',
+      'find on jira',
+      'check the jira',
+      'look in jira',
+      'jira tasks',
+      'jira project',
+    ],
   };
+
+  /**
+   * Tool-specific minimum keyword thresholds.
+   * Tools with unique, specific names can have lower thresholds.
+   */
+  private readonly toolMinimumThresholds: Record<string, number> = {
+    confluence: 1, // "confluence" is highly specific
+    jira: 1, // "jira" is highly specific
+    email: 2, // "email" is more generic, keep higher threshold
+    calendar: 2, // Calendar terms can be ambiguous
+    restaurant: 2, // Restaurant terms can be ambiguous
+    websearch: 2, // Web search terms are often generic
+  };
+
+  /**
+   * Get the minimum keyword threshold for a specific tool.
+   */
+  private getMinimumThreshold(toolName: string): number {
+    return this.toolMinimumThresholds[toolName] || 2; // Default to 2 if not specified
+  }
 
   /**
    * Analyzes a transcript to detect if external tools are required.
@@ -124,22 +212,21 @@ export class KeywordIntentDetector implements IToolIntentDetector {
         }
       }
 
-      // Only include tools with sufficient keyword matches (minimum 2 matches)
-      // This prevents false positives from single weak keyword matches
-      const MINIMUM_KEYWORD_MATCHES = 2;
+      // Use tool-specific minimum threshold instead of global threshold
+      const minimumMatches = this.getMinimumThreshold(toolName);
 
-      if (matches >= MINIMUM_KEYWORD_MATCHES) {
+      if (matches >= minimumMatches) {
         detectedTools.push(toolName);
         totalMatches += matches;
         maxMatches = Math.max(maxMatches, matches);
 
         logger.info(
-          `[KeywordIntentDetector] Detected ${toolName} tool intent with ${matches} keyword matches:`,
+          `[KeywordIntentDetector] Detected ${toolName} tool intent with ${matches} keyword matches (threshold: ${minimumMatches}):`,
           matchedKeywords
         );
       } else if (matches > 0) {
         logger.debug(
-          `[KeywordIntentDetector] ${toolName} tool intent below threshold with ${matches} matches:`,
+          `[KeywordIntentDetector] ${toolName} tool intent below threshold with ${matches} matches (threshold: ${minimumMatches}):`,
           matchedKeywords
         );
       }

@@ -123,7 +123,9 @@ export const agentSwarmConfig: AgentSwarmConfig = {
 // Intent Detector Configuration
 export const intentDetectorConfig: IntentDetectorConfig = {
   mode: (process.env.INTENT_DETECTOR_MODE as IntentDetectorMode) || 'keyword',
-  confidenceThreshold: parseFloat(process.env.INTENT_CONFIDENCE_THRESHOLD || '0.5'),
+  confidenceThreshold: parseFloat(
+    process.env.INTENT_CONFIDENCE_THRESHOLD || '0.5'
+  ),
 };
 
 // Function to get the current model from environment variables or a default
