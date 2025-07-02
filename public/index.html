@@ -27,14 +27,14 @@
       <!-- Settings Bar -->
       <div class="settings-bar">
         <div class="setting">
-          <label for="stt-engine-select">STT Engine:</label>
+          <label for="stt-engine-select">STT:</label>
           <select id="stt-engine-select">
             <option value="groq" selected>Groq</option>
             <option value="deepgram">Deepgram</option>
           </select>
         </div>
         <div class="setting">
-          <label for="tts-engine-select">TTS Engine:</label>
+          <label for="tts-engine-select">TTS:</label>
           <select id="tts-engine-select">
             <option value="groq" selected>Groq</option>
             <option value="cartesia">Cartesia</option>
@@ -74,7 +74,9 @@
       </div>
     </div>
 
+    <!-- RNNoise Library -->
+    <script type="module" src="rnnoise-sync.js"></script>
     <!-- Application Script -->
-    <script src="script.js"></script>
+    <script type="module" src="script.js"></script>
   </body>
 </html>

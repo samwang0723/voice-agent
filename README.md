@@ -93,6 +93,132 @@ bun dev
 
 The server will be running at `http://localhost:3000`. You can open `public/index.html` in your browser to interact with the voice agent.
 
+## Audio & Noise Troubleshooting
+
+### Understanding the Audio Pipeline
+
+The voice agent uses a two-stage audio processing pipeline:
+
+1. **Voice Activity Detection (VAD)** - Detects when speech begins and ends
+2. **Noise Reduction (RNNoise)** - Cleans up audio after speech is detected
+
+**Important**: VAD runs _before_ RNNoise in the pipeline. This means background noises (table hits, keyboard clicks, scratching sounds) can trigger false speech detection before the audio gets cleaned by noise reduction.
+
+### Common Issues and Solutions
+
+#### False Speech Triggers from Background Noise
+
+**Problem**: The voice agent starts listening when you hit the table, type on keyboard, or make other non-speech sounds.
+
+**Cause**: VAD thresholds are too permissive, allowing short loud noises to be classified as speech.
+
+**Solutions**:
+
+- Increase `positiveSpeechThreshold` (default: 0.70) to make VAD less sensitive
+- Increase `minSpeechFrames` (default: 6) to require longer sustained audio
+- Use a quieter environment or position microphone away from noise sources
+- Consider using a directional microphone or headset
+
+#### Sensitive Microphone Environments
+
+**Problem**: High-gain microphones pick up too much ambient noise.
+
+**Solutions**:
+
+- Reduce microphone gain in system settings
+- Increase VAD thresholds as described above
+- Enable RMS energy gating (automatically filters very quiet sounds)
+
+### VAD Parameter Reference
+
+The following parameters control speech detection sensitivity:
+
+| Parameter                 | Default | Description                                | Effect of Higher Values         |
+| ------------------------- | ------- | ------------------------------------------ | ------------------------------- |
+| `positiveSpeechThreshold` | 0.70    | How easily audio is classified as speech   | Less sensitive to noise         |
+| `negativeSpeechThreshold` | 0.50    | Threshold for ending speech detection      | Cleaner speech cutoffs          |
+| `minSpeechFrames`         | 6       | Minimum frames required for speech (~64ms) | Requires longer sustained sound |
+| `redemptionFrames`        | 4       | How long speech can pause before ending    | Shorter speech tails            |
+| `preSpeechPadFrames`      | 1       | Audio captured before speech starts        | More context preservation       |
+
+#### Recommended Settings by Environment
+
+**Quiet Environment (Home office)**:
+
+- `positiveSpeechThreshold`: 0.60-0.70
+- `minSpeechFrames`: 4-6
+
+**Noisy Environment (Open office, café)**:
+
+- `positiveSpeechThreshold`: 0.75-0.85
+- `minSpeechFrames`: 8-10
+
+**Very Sensitive Microphone**:
+
+- `positiveSpeechThreshold`: 0.80+
+- `minSpeechFrames`: 10+
+- Enable RMS energy gating
+
+### Debugging VAD Performance
+
+#### Monitoring in Browser Console
+
+The application provides real-time VAD statistics that are logged every 30 seconds. Open your browser's developer console (F12) to view:
+
+```
+┌─────────────────────┬────────┐
+│ (index)             │ Values │
+├─────────────────────┼────────┤
+│ False Starts        │ 12     │
+│ True Starts         │ 8      │
+│ Gate Drops          │ 3      │
+│ False Trigger Rate  │ 60.0%  │
+└─────────────────────┴────────┘
+```
+
+#### Understanding Debug Counters
+
+- **False Starts**: VAD triggered but no actual speech detected (false positives)
+- **True Starts**: VAD correctly detected speech
+- **Gate Drops**: Audio filtered out by RMS energy gate (too quiet)
+- **False Trigger Rate**: Percentage of VAD triggers that were false positives
+
+#### When to Adjust Thresholds
+
+**High False Trigger Rate (>30%)**:
+
+- Increase `positiveSpeechThreshold` by 0.05-0.10
+- Increase `minSpeechFrames` by 2-4
+- Check for consistent noise sources
+
+**Missing Speech Detection**:
+
+- Decrease `positiveSpeechThreshold` by 0.05
+- Decrease `minSpeechFrames` by 1-2
+- Check microphone levels and positioning
+
+**Frequent Gate Drops with Good Audio**:
+
+- Decrease `RMS_ENERGY_THRESHOLD` (default: 0.01)
+- Check microphone gain settings
+
+#### Manual VAD Tuning
+
+To customize VAD parameters, modify the `DEFAULT_VAD_TUNING` object in `public/script.js`:
+
+```javascript
+const DEFAULT_VAD_TUNING = {
+  positiveSpeechThreshold: 0.75, // Increase for less sensitivity
+  negativeSpeechThreshold: 0.5,
+  minSpeechFrames: 8, // Increase to require longer speech
+  redemptionFrames: 4,
+  preSpeechPadFrames: 1,
+  frameSamples: 512,
+};
+```
+
+Refresh the page after making changes to apply new settings.
+
 ## Project Structure
 
 ```

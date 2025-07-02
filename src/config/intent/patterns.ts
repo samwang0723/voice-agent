@@ -129,12 +129,6 @@ export const intentPatterns: Record<string, RegExp[]> = {
     /\b(?:google|search\s+for)\s+(?:information\s+)?(?:about|on)\b/i,
     /\bweb\s+search\s+(?:for|about|on)\b/i,
 
-    // Information seeking patterns
-    /\b(?:what\s+is|what\s+are|tell\s+me\s+about|explain)\s+(?:a\s+|an\s+|the\s+)?\w+/i,
-    /\b(?:how\s+(?:do|does|can|to)|why\s+(?:is|are|do|does))\b/i,
-    /\b(?:when\s+(?:is|was|did|will)|where\s+(?:is|was|can|do))\b/i,
-    /\b(?:who\s+(?:is|was|are)|which\s+(?:is|are|one))\b/i,
-
     // Research and lookup patterns
     /\b(?:look\s+up|find\s+out|research|investigate)\s+(?:about|on|information\s+about)\b/i,
     /\b(?:find|get)\s+(?:information|details|facts)\s+(?:about|on|regarding)\b/i,
@@ -213,11 +207,6 @@ export const keywordWeights: Record<string, number> = {
   lookup: 0.7,
   research: 0.8,
   investigate: 0.7,
-  information: 0.7,
-  facts: 0.6,
-  details: 0.6,
-  explain: 0.7,
-  learn: 0.6,
 
   // Removed all generic time-related and action verb keywords that cause false positives
   // Only keeping highly specific action verbs

@@ -1,8 +1,8 @@
-import logger from '../logger';
 import type {
   IToolIntentDetector,
   ToolIntentResult,
 } from '../../domain/intent/intentDetector.service';
+import logger from '../logger';
 
 /**
  * Configuration for individual detectors in the composite.
@@ -25,24 +25,23 @@ export class CompositeIntentDetector implements IToolIntentDetector {
    * @param detectors - Array of detector implementations to orchestrate
    * @param weights - Optional array of weights for each detector (defaults to equal weights)
    */
-  constructor(
-    detectors: IToolIntentDetector[],
-    weights?: number[]
-  ) {
+  constructor(detectors: IToolIntentDetector[], weights?: number[]) {
     if (!detectors || detectors.length === 0) {
       throw new Error('CompositeIntentDetector requires at least one detector');
     }
 
     // Default to equal weights if not provided
     const defaultWeights = weights || new Array(detectors.length).fill(1.0);
-    
+
     if (defaultWeights.length !== detectors.length) {
       throw new Error('Number of weights must match number of detectors');
     }
 
     // Normalize weights to sum to 1.0
     const weightSum = defaultWeights.reduce((sum, weight) => sum + weight, 0);
-    const normalizedWeights = defaultWeights.map(weight => weight / weightSum);
+    const normalizedWeights = defaultWeights.map(
+      (weight) => weight / weightSum
+    );
 
     this.detectorConfigs = detectors.map((detector, index) => ({
       detector,
@@ -52,7 +51,7 @@ export class CompositeIntentDetector implements IToolIntentDetector {
 
     logger.info(
       `[CompositeIntentDetector] Initialized with ${this.detectorConfigs.length} detectors:`,
-      this.detectorConfigs.map(config => ({
+      this.detectorConfigs.map((config) => ({
         name: config.name,
         weight: config.weight.toFixed(3),
       }))
@@ -105,7 +104,7 @@ export class CompositeIntentDetector implements IToolIntentDetector {
           `[CompositeIntentDetector] ${config.name} failed:`,
           error instanceof Error ? error.message : String(error)
         );
-        
+
         // Return a default result for failed detectors
         return {
           config,
@@ -122,8 +121,10 @@ export class CompositeIntentDetector implements IToolIntentDetector {
     const detectorResults = await Promise.all(detectorPromises);
 
     // Filter successful results for aggregation
-    const successfulResults = detectorResults.filter(result => result.success);
-    
+    const successfulResults = detectorResults.filter(
+      (result) => result.success
+    );
+
     if (successfulResults.length === 0) {
       console.error('[CompositeIntentDetector] All detectors failed');
       return {
@@ -142,7 +143,8 @@ export class CompositeIntentDetector implements IToolIntentDetector {
         requiresTools: aggregatedResult.requiresTools,
         detectedTools: aggregatedResult.detectedTools,
         confidence: aggregatedResult.confidence?.toFixed(3),
-        transcript: transcript.substring(0, 100) + (transcript.length > 100 ? '...' : ''),
+        transcript:
+          transcript.substring(0, 100) + (transcript.length > 100 ? '...' : ''),
       }
     );
 
@@ -168,7 +170,7 @@ export class CompositeIntentDetector implements IToolIntentDetector {
     for (const { config, result } of detectorResults) {
       // Add detected tools to the union
       if (result.detectedTools && result.detectedTools.length > 0) {
-        result.detectedTools.forEach(tool => allDetectedTools.add(tool));
+        result.detectedTools.forEach((tool) => allDetectedTools.add(tool));
         hasAnyToolDetection = true;
       }
 
@@ -180,7 +182,8 @@ export class CompositeIntentDetector implements IToolIntentDetector {
     }
 
     // Calculate final confidence as weighted average
-    const finalConfidence = totalWeight > 0 ? weightedConfidenceSum / totalWeight : 0;
+    const finalConfidence =
+      totalWeight > 0 ? weightedConfidenceSum / totalWeight : 0;
 
     // Determine if tools are required based on any detector finding tools
     const requiresTools = hasAnyToolDetection;
@@ -198,7 +201,7 @@ export class CompositeIntentDetector implements IToolIntentDetector {
    * Useful for debugging and monitoring.
    */
   getDetectorInfo(): Array<{ name: string; weight: number }> {
-    return this.detectorConfigs.map(config => ({
+    return this.detectorConfigs.map((config) => ({
       name: config.name || 'Unknown',
       weight: config.weight,
     }));
@@ -210,7 +213,7 @@ export class CompositeIntentDetector implements IToolIntentDetector {
    */
   updateDetectorWeight(detectorName: string, newWeight: number): boolean {
     const configToUpdate = this.detectorConfigs.find(
-      config => config.name === detectorName
+      (config) => config.name === detectorName
     );
 
     if (!configToUpdate) {
@@ -228,14 +231,14 @@ export class CompositeIntentDetector implements IToolIntentDetector {
       (sum, config) => sum + config.weight,
       0
     );
-    
-    this.detectorConfigs.forEach(config => {
+
+    this.detectorConfigs.forEach((config) => {
       config.weight = config.weight / weightSum;
     });
 
     logger.info(
       `[CompositeIntentDetector] Updated weight for '${detectorName}' and renormalized:`,
-      this.detectorConfigs.map(config => ({
+      this.detectorConfigs.map((config) => ({
         name: config.name,
         weight: config.weight.toFixed(3),
       }))
@@ -248,9 +251,16 @@ export class CompositeIntentDetector implements IToolIntentDetector {
    * Add a new detector to the composite at runtime.
    * All weights are renormalized after addition.
    */
-  addDetector(detector: IToolIntentDetector, weight: number = 1.0, name?: string): void {
-    const detectorName = name || detector.constructor.name || `Detector${this.detectorConfigs.length}`;
-    
+  addDetector(
+    detector: IToolIntentDetector,
+    weight: number = 1.0,
+    name?: string
+  ): void {
+    const detectorName =
+      name ||
+      detector.constructor.name ||
+      `Detector${this.detectorConfigs.length}`;
+
     this.detectorConfigs.push({
       detector,
       weight,
@@ -262,14 +272,14 @@ export class CompositeIntentDetector implements IToolIntentDetector {
       (sum, config) => sum + config.weight,
       0
     );
-    
-    this.detectorConfigs.forEach(config => {
+
+    this.detectorConfigs.forEach((config) => {
       config.weight = config.weight / weightSum;
     });
 
     logger.info(
       `[CompositeIntentDetector] Added detector '${detectorName}' and renormalized weights:`,
-      this.detectorConfigs.map(config => ({
+      this.detectorConfigs.map((config) => ({
         name: config.name,
         weight: config.weight.toFixed(3),
       }))

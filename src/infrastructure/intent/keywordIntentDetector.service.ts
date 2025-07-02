@@ -124,13 +124,22 @@ export class KeywordIntentDetector implements IToolIntentDetector {
         }
       }
 
-      if (matches > 0) {
+      // Only include tools with sufficient keyword matches (minimum 2 matches)
+      // This prevents false positives from single weak keyword matches
+      const MINIMUM_KEYWORD_MATCHES = 2;
+
+      if (matches >= MINIMUM_KEYWORD_MATCHES) {
         detectedTools.push(toolName);
         totalMatches += matches;
         maxMatches = Math.max(maxMatches, matches);
 
         logger.info(
           `[KeywordIntentDetector] Detected ${toolName} tool intent with ${matches} keyword matches:`,
+          matchedKeywords
+        );
+      } else if (matches > 0) {
+        logger.debug(
+          `[KeywordIntentDetector] ${toolName} tool intent below threshold with ${matches} matches:`,
           matchedKeywords
         );
       }
@@ -149,7 +158,7 @@ export class KeywordIntentDetector implements IToolIntentDetector {
     };
 
     if (requiresTools) {
-      console.log(`[KeywordIntentDetector] Tool intent detected:`, {
+      logger.info(`[KeywordIntentDetector] Tool intent detected:`, {
         transcript:
           transcript.substring(0, 100) + (transcript.length > 100 ? '...' : ''),
         detectedTools,
@@ -157,7 +166,7 @@ export class KeywordIntentDetector implements IToolIntentDetector {
         totalMatches,
       });
     } else {
-      console.log(
+      logger.info(
         `[KeywordIntentDetector] No tool intent detected for transcript:`,
         transcript.substring(0, 100) + (transcript.length > 100 ? '...' : '')
       );
@@ -183,7 +192,7 @@ export class KeywordIntentDetector implements IToolIntentDetector {
       this.toolKeywords[toolName] = [];
     }
     this.toolKeywords[toolName].push(...keywords);
-    console.log(
+    logger.info(
       `[KeywordIntentDetector] Added ${keywords.length} keywords to ${toolName} category`
     );
   }

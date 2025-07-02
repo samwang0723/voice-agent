@@ -68,13 +68,21 @@ export class PatternIntentDetector implements IToolIntentDetector {
         normalizedTranscript,
         patterns
       );
-      const keywordScore = this.calculateKeywordScore(terms);
+      // Calculate keyword score specific to this tool only
+      const keywordScore = this.calculateToolSpecificKeywordScore(
+        terms,
+        toolName
+      );
 
       // Combine pattern and keyword scores with weighted formula
       // Pattern score has higher weight (0.7) as it's more specific
       const combinedScore = patternScore * 0.7 + keywordScore * 0.3;
 
-      if (combinedScore > 0) {
+      // Only include tools with meaningful confidence (minimum threshold of 0.2)
+      // This prevents false positives from very weak matches
+      const MINIMUM_CONFIDENCE_THRESHOLD = 0.2;
+
+      if (combinedScore > MINIMUM_CONFIDENCE_THRESHOLD) {
         detectedTools.push(toolName);
         toolScores[toolName] = combinedScore;
 
@@ -84,6 +92,16 @@ export class PatternIntentDetector implements IToolIntentDetector {
             patternScore: patternScore.toFixed(3),
             keywordScore: keywordScore.toFixed(3),
             combinedScore: combinedScore.toFixed(3),
+          }
+        );
+      } else if (combinedScore > 0) {
+        logger.debug(
+          `[PatternIntentDetector] ${toolName} tool intent below threshold:`,
+          {
+            patternScore: patternScore.toFixed(3),
+            keywordScore: keywordScore.toFixed(3),
+            combinedScore: combinedScore.toFixed(3),
+            threshold: MINIMUM_CONFIDENCE_THRESHOLD,
           }
         );
       }
@@ -192,6 +210,92 @@ export class PatternIntentDetector implements IToolIntentDetector {
     // Normalize score based on maximum possible weight
     return maxPossibleWeight > 0
       ? Math.min(totalWeight / maxPossibleWeight, 1.0)
+      : 0;
+  }
+
+  /**
+   * Calculate tool-specific keyword score to prevent cross-tool contamination.
+   * Only considers keywords that are relevant to the specific tool.
+   */
+  private calculateToolSpecificKeywordScore(
+    terms: string[],
+    toolName: string
+  ): number {
+    // Define tool-specific keyword sets to prevent false positives
+    const toolSpecificKeywords: Record<string, Set<string>> = {
+      email: new Set([
+        'email',
+        'inbox',
+        'compose',
+        'reply',
+        'forward',
+        'draft',
+        'outbox',
+      ]),
+      calendar: new Set([
+        'calendar',
+        'schedule',
+        'meeting',
+        'appointment',
+        'reschedule',
+        'event',
+        'agenda',
+        'availability',
+      ]),
+      restaurant: new Set([
+        'restaurant',
+        'reservation',
+        'dining',
+        'menu',
+        'cuisine',
+        'dine',
+      ]),
+      websearch: new Set([
+        'search',
+        'google',
+        'bing',
+        'web',
+        'internet',
+        'online',
+        'lookup',
+        'research',
+        'browse',
+        'query',
+      ]),
+    };
+
+    const allowedKeywords = toolSpecificKeywords[toolName] || new Set();
+    let totalWeight = 0;
+    const matchedKeywords: Array<{ keyword: string; weight: number }> = [];
+
+    // Only score keywords that are specific to this tool
+    for (const term of terms) {
+      const normalizedTerm = term.toLowerCase();
+
+      if (allowedKeywords.has(normalizedTerm)) {
+        const weight = getKeywordWeight(normalizedTerm);
+        if (weight > 0) {
+          totalWeight += weight;
+          matchedKeywords.push({ keyword: normalizedTerm, weight });
+        }
+      }
+    }
+
+    if (matchedKeywords.length > 0) {
+      logger.info(
+        `[PatternIntentDetector] Tool-specific keyword matches for ${toolName}:`,
+        matchedKeywords.map((k) => `${k.keyword}(${k.weight})`)
+      );
+    }
+
+    // Simple scoring: return the total weight divided by the number of allowed keywords
+    // This prevents tools with many keywords from having unfair advantage
+    const maxPossibleForTool = Array.from(allowedKeywords)
+      .map((keyword) => getKeywordWeight(keyword))
+      .reduce((max, weight) => Math.max(max, weight), 0);
+
+    return maxPossibleForTool > 0
+      ? Math.min(totalWeight / maxPossibleForTool, 1.0)
       : 0;
   }
 

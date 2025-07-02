@@ -6,7 +6,7 @@
 export interface IToolIntentDetector {
   /**
    * Analyzes a transcript to detect if external tools are required.
-   * 
+   *
    * @param transcript - The user's spoken input as text
    * @returns Promise resolving to detection result containing:
    *   - requiresTools: boolean indicating if external tools are needed

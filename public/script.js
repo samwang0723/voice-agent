@@ -1,5 +1,5 @@
 // OAuth Configuration
-const AGENT_SWARM_API = 'https://9d62-36-232-111-200.ngrok-free.app/api/v1';
+const AGENT_SWARM_API = 'https://6822-111-253-204-35.ngrok-free.app/api/v1';
 const OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/userinfo.email',
   'https://www.googleapis.com/auth/userinfo.profile',
@@ -16,6 +16,33 @@ let isVadReady = false; // Track if VAD is initialized and ready
 let audioContext = null;
 let currentAudioSource = null; // Use for Web Audio API source node
 let isOAuthInProgress = false; // Prevent multiple OAuth flows
+
+// RNNoise global variables
+let rnnoiseModule = null;
+let rnnoiseState = null;
+let isNoiseReductionEnabled = true;
+let inputBuffer = null;
+let outputBuffer = null;
+
+// VAD Tuning Configuration - Centralized settings to prevent false triggers
+const DEFAULT_VAD_TUNING = {
+  positiveSpeechThreshold: 0.7, // Increased from 0.5-0.6 for less sensitivity
+  negativeSpeechThreshold: 0.5, // Increased from 0.35-0.4 for cleaner cutoffs
+  minSpeechFrames: 6, // Increased from 3-4, requires ~64ms vs 32ms
+  redemptionFrames: 4, // Reduced from 8 for shorter speech tails
+  preSpeechPadFrames: 1,
+  frameSamples: 512,
+};
+
+// RMS Energy Gate Threshold (approximately -40 dBFS)
+const RMS_ENERGY_THRESHOLD = 0.01;
+
+// VAD Debugging Counters for observability
+const vadDebugCounters = {
+  falseStarts: 0,
+  trueStarts: 0,
+  gateDrops: 0,
+};
 
 // DOM elements
 const statusIndicator = document.getElementById('statusIndicator');
@@ -59,7 +86,6 @@ function storeToken(tokenData) {
     }
     hideLoginPrompt();
     addMessage('Authentication successful', 'system');
-    addMessage(`Bearer token: ${tokenData.access_token}`, 'system');
   } catch (error) {
     console.error('Failed to store token:', error);
     addMessage('Failed to store authentication token', 'error');
@@ -448,6 +474,9 @@ function stopListening() {
     isVadReady = false; // VAD is no longer ready
     updateStatus(isConnected);
   }
+
+  // Cleanup RNNoise resources
+  cleanupRNNoise();
 }
 
 // Update connection status and UI
@@ -696,6 +725,37 @@ function connectWebSocket() {
   };
 }
 
+// Calculate RMS energy of audio buffer for pre-VAD gating
+function calculateRMS(audioBuffer) {
+  if (!audioBuffer || audioBuffer.length === 0) {
+    return 0;
+  }
+
+  let sum = 0;
+  for (let i = 0; i < audioBuffer.length; i++) {
+    sum += audioBuffer[i] * audioBuffer[i];
+  }
+
+  return Math.sqrt(sum / audioBuffer.length);
+}
+
+// Log VAD statistics for monitoring and tuning
+function logVADStats() {
+  console.table({
+    'False Starts': vadDebugCounters.falseStarts,
+    'True Starts': vadDebugCounters.trueStarts,
+    'Gate Drops': vadDebugCounters.gateDrops,
+    'False Trigger Rate':
+      vadDebugCounters.trueStarts > 0
+        ? (
+            (vadDebugCounters.falseStarts /
+              (vadDebugCounters.falseStarts + vadDebugCounters.trueStarts)) *
+            100
+          ).toFixed(1) + '%'
+        : 'N/A',
+  });
+}
+
 // Initialize Voice Activity Detection (VAD)
 async function initializeVAD() {
   try {
@@ -718,17 +778,16 @@ async function initializeVAD() {
     console.log('ONNX Runtime version:', ort.version || 'unknown');
     console.log('VAD library loaded successfully');
 
+    // Initialize RNNoise after VAD setup
+    await initializeRNNoise();
+
     // Try multiple configurations for better compatibility
     const vadConfigs = [
       {
         model: 'v5',
-        positiveSpeechThreshold: 0.3,
-        negativeSpeechThreshold: 0.25,
+        ...DEFAULT_VAD_TUNING,
         userSpeakingThreshold: 0.4,
         preSpeechPadFrames: 2,
-        minSpeechFrames: 3,
-        redemptionFrames: 8,
-        frameSamples: 512,
       },
       // Simplest configuration first
       {
@@ -758,11 +817,22 @@ async function initializeVAD() {
         vadInstance = await vad.MicVAD.new({
           onSpeechStart: () => {
             console.log('Speech started');
+            vadDebugCounters.trueStarts++;
             updateStatus(isConnected);
           },
           onSpeechEnd: async (audio) => {
             console.log('Speech ended, audio length:', audio.length);
             updateStatus(isConnected);
+
+            // Apply RMS energy gate before processing
+            const rmsEnergy = calculateRMS(audio);
+            console.log('Audio RMS energy:', rmsEnergy.toFixed(4));
+
+            if (rmsEnergy < RMS_ENERGY_THRESHOLD) {
+              console.log('Audio dropped by RMS energy gate (too quiet)');
+              vadDebugCounters.gateDrops++;
+              return; // Skip processing low-energy audio
+            }
 
             if (ws && ws.readyState === WebSocket.OPEN) {
               // Step 1: Gather context information
@@ -785,11 +855,26 @@ async function initializeVAD() {
                 })
               );
 
+              // Step 2.5: Apply noise reduction if enabled and available
+              let processedAudio = audio;
+              if (isNoiseReductionEnabled && rnnoiseModule && rnnoiseState) {
+                try {
+                  processedAudio = await denoiseAudio(audio);
+                  console.log('Applied noise reduction to audio');
+                } catch (error) {
+                  console.warn(
+                    'Noise reduction failed, using original audio:',
+                    error
+                  );
+                  processedAudio = audio;
+                }
+              }
+
               // Step 3: Convert to 16-bit PCM and send audio data.
               // This reduces payload size by 50% compared to Float32.
-              const int16Array = new Int16Array(audio.length);
-              for (let i = 0; i < audio.length; i++) {
-                const s = Math.max(-1, Math.min(1, audio[i]));
+              const int16Array = new Int16Array(processedAudio.length);
+              for (let i = 0; i < processedAudio.length; i++) {
+                const s = Math.max(-1, Math.min(1, processedAudio[i]));
                 int16Array[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
               }
 
@@ -800,7 +885,7 @@ async function initializeVAD() {
               );
               ws.send(int16Array.buffer);
               addMessage(
-                `Audio sent (${audio.length} samples as 16-bit PCM)`,
+                `Audio sent (${processedAudio.length} samples as 16-bit PCM${isNoiseReductionEnabled && rnnoiseModule ? ' with noise reduction' : ''})`,
                 'system'
               );
 
@@ -815,6 +900,7 @@ async function initializeVAD() {
           },
           onVADMisfire: () => {
             console.log('VAD misfire');
+            vadDebugCounters.falseStarts++;
             updateStatus(isConnected);
           },
           ...config,
@@ -824,6 +910,9 @@ async function initializeVAD() {
         addMessage(`Voice detection ready (${config.model} model)`, 'system');
         vadInitialized = true;
         isVadReady = true;
+
+        // Set up periodic VAD statistics logging for monitoring
+        setInterval(logVADStats, 30000); // Log stats every 30 seconds
 
         // Check if we can auto-start listening now that VAD is ready
         await checkAndAutoStartListening();
@@ -997,10 +1086,11 @@ function setupEventListeners() {
           type: 'config',
           sttEngine,
           ttsEngine,
+          noiseReduction: true,
         })
       );
       addMessage(
-        `Configuration updated - STT: ${sttEngine}, TTS: ${ttsEngine}`,
+        `Configuration updated - STT: ${sttEngine}, TTS: ${ttsEngine}, Noise Reduction: 'ON'}`,
         'system'
       );
     }
@@ -1116,4 +1206,158 @@ function updateLoginButtonState() {
       btn.style.cursor = 'pointer';
     }
   });
+}
+
+// RNNoise Helper Functions
+
+// Initialize RNNoise WASM module
+async function initializeRNNoise() {
+  try {
+    console.log('Initializing RNNoise...');
+    addMessage('Loading noise reduction module...', 'system');
+
+    // Check if RNNoise module is available
+    if (typeof createRNNWasmModule === 'undefined') {
+      console.warn('RNNoise module not available, skipping noise reduction');
+      addMessage(
+        'Noise reduction not available - continuing without it',
+        'system'
+      );
+      return;
+    }
+
+    // Load the RNNoise WASM module
+    rnnoiseModule = await createRNNWasmModule();
+    await rnnoiseModule.ready;
+
+    // Initialize RNNoise
+    rnnoiseModule._rnnoise_init();
+
+    // Create noise reduction state
+    rnnoiseState = rnnoiseModule._rnnoise_create();
+    if (!rnnoiseState) {
+      throw new Error('Failed to create RNNoise state');
+    }
+
+    // Allocate persistent input/output buffers (480 samples * 4 bytes per Float32)
+    const bufferSize = 480 * 4;
+    inputBuffer = rnnoiseModule._malloc(bufferSize);
+    outputBuffer = rnnoiseModule._malloc(bufferSize);
+
+    if (!inputBuffer || !outputBuffer) {
+      throw new Error('Failed to allocate RNNoise buffers');
+    }
+
+    console.log('RNNoise initialized successfully');
+    addMessage('Noise reduction ready', 'system');
+  } catch (error) {
+    console.warn('RNNoise initialization failed:', error);
+    addMessage(`Noise reduction unavailable: ${error.message}`, 'system');
+
+    // Cleanup on failure
+    cleanupRNNoise();
+  }
+}
+
+// Process audio through RNNoise noise reduction
+async function denoiseAudio(audioBuffer) {
+  if (!rnnoiseModule || !rnnoiseState || !inputBuffer || !outputBuffer) {
+    console.warn('RNNoise not available, returning original audio');
+    return audioBuffer;
+  }
+
+  try {
+    const frameSize = 480; // RNNoise requires 480 samples per frame
+    const numFrames = Math.ceil(audioBuffer.length / frameSize);
+    const denoisedBuffer = new Float32Array(audioBuffer.length);
+
+    let outputIndex = 0;
+
+    for (let i = 0; i < numFrames; i++) {
+      const startIndex = i * frameSize;
+      const endIndex = Math.min(startIndex + frameSize, audioBuffer.length);
+      const frameLength = endIndex - startIndex;
+
+      // Create frame with padding if necessary
+      const frame = new Float32Array(frameSize);
+      for (let j = 0; j < frameLength; j++) {
+        frame[j] = audioBuffer[startIndex + j];
+      }
+      // Remaining samples are already zero-padded
+
+      // Process frame through RNNoise
+      const processedFrame = await processFrame(frame);
+
+      // Copy processed samples to output buffer
+      for (let j = 0; j < frameLength; j++) {
+        denoisedBuffer[outputIndex++] = processedFrame[j];
+      }
+    }
+
+    return denoisedBuffer;
+  } catch (error) {
+    console.error('Error during noise reduction:', error);
+    return audioBuffer; // Return original audio on error
+  }
+}
+
+// Process a single 480-sample frame through RNNoise
+async function processFrame(inputSamples) {
+  if (!rnnoiseModule || !rnnoiseState || !inputBuffer || !outputBuffer) {
+    return inputSamples;
+  }
+
+  try {
+    // Copy input samples to WASM memory
+    const inputHeap = new Float32Array(
+      rnnoiseModule.HEAPF32.buffer,
+      inputBuffer,
+      480
+    );
+    inputHeap.set(inputSamples);
+
+    // Process frame
+    rnnoiseModule._rnnoise_process_frame(
+      rnnoiseState,
+      outputBuffer,
+      inputBuffer
+    );
+
+    // Copy output samples from WASM memory
+    const outputHeap = new Float32Array(
+      rnnoiseModule.HEAPF32.buffer,
+      outputBuffer,
+      480
+    );
+    return new Float32Array(outputHeap);
+  } catch (error) {
+    console.error('Error processing frame:', error);
+    return inputSamples; // Return original frame on error
+  }
+}
+
+// Cleanup RNNoise resources
+function cleanupRNNoise() {
+  try {
+    if (rnnoiseModule) {
+      if (rnnoiseState) {
+        rnnoiseModule._rnnoise_destroy(rnnoiseState);
+        rnnoiseState = null;
+      }
+
+      if (inputBuffer) {
+        rnnoiseModule._free(inputBuffer);
+        inputBuffer = null;
+      }
+
+      if (outputBuffer) {
+        rnnoiseModule._free(outputBuffer);
+        outputBuffer = null;
+      }
+    }
+
+    console.log('RNNoise resources cleaned up');
+  } catch (error) {
+    console.error('Error cleaning up RNNoise:', error);
+  }
 }
