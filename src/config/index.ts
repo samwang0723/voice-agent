@@ -11,7 +11,8 @@ export type ModelProvider =
   | 'google'
   | 'groq'
   | 'cartesia'
-  | 'deepgram';
+  | 'deepgram'
+  | 'elevenlabs';
 
 export type IntentDetectorMode = 'keyword' | 'pattern' | 'hybrid';
 
@@ -97,6 +98,12 @@ export const ttsConfigs: Record<string, TextToSpeechConfig> = {
     provider: 'deepgram',
     modelName: 'aura-2-iris-en',
     apiKey: process.env.DEEPGRAM_API_KEY,
+  },
+  elevenlabs: {
+    provider: 'elevenlabs',
+    modelName: process.env.ELEVENLABS_MODEL_NAME || 'eleven_multilingual_v2',
+    apiKey: process.env.ELEVENLABS_API_KEY,
+    voiceId: process.env.ELEVENLABS_VOICE_ID,
   },
 };
 

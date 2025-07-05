@@ -1,5 +1,5 @@
 // OAuth Configuration
-const AGENT_SWARM_API = 'https://6822-111-253-204-35.ngrok-free.app/api/v1';
+const AGENT_SWARM_API = 'https://1511-111-253-204-35.ngrok-free.app/api/v1';
 const OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/userinfo.email',
   'https://www.googleapis.com/auth/userinfo.profile',

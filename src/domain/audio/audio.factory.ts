@@ -10,6 +10,7 @@ import {
   DeepgramTranscriptionService,
   DeepgramTextToSpeechService,
 } from '../../infrastructure/ai/deepgram.service';
+import { ElevenLabsTextToSpeechService } from '../../infrastructure/ai/elevenlabs.service';
 import type {
   ITranscriptionService,
   ITextToSpeechService,
@@ -26,6 +27,7 @@ const ttsServices: Record<string, ITextToSpeechService> = {
   groq: new GroqTextToSpeechService(),
   cartesia: new CartesiaTextToSpeechService(),
   deepgram: new DeepgramTextToSpeechService(),
+  elevenlabs: new ElevenLabsTextToSpeechService(),
 };
 
 export function getTranscriptionService(
@@ -33,7 +35,9 @@ export function getTranscriptionService(
 ): ITranscriptionService {
   const service = transcriptionServices[provider];
   if (!service) {
-    logger.warn(`Transcription provider '${provider}' not found. Defaulting to 'groq'.`);
+    logger.warn(
+      `Transcription provider '${provider}' not found. Defaulting to 'groq'.`
+    );
     return transcriptionServices.groq as ITranscriptionService;
   }
   return service;
@@ -46,4 +50,4 @@ export function getTextToSpeechService(provider: string): ITextToSpeechService {
     return ttsServices.groq as ITextToSpeechService;
   }
   return service;
-} 
+}
