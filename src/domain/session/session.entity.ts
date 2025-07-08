@@ -4,7 +4,7 @@ import type { WebSocketData } from '../../interfaces/websocket/websocket.handler
 export class Session {
   public context: any = {};
   public sttEngine: string = 'groq';
-  public ttsEngine: string = 'groq';
+  public ttsEngine: string = 'elevenlabs';
   public bearerToken?: string;
   public swarmInitialized: boolean = false;
 

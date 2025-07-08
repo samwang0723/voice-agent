@@ -46,8 +46,10 @@ export function getTranscriptionService(
 export function getTextToSpeechService(provider: string): ITextToSpeechService {
   const service = ttsServices[provider];
   if (!service) {
-    logger.warn(`TTS provider '${provider}' not found. Defaulting to 'groq'.`);
-    return ttsServices.groq as ITextToSpeechService;
+    logger.warn(
+      `TTS provider '${provider}' not found. Defaulting to 'elevenlabs'.`
+    );
+    return ttsServices.elevenlabs as ITextToSpeechService;
   }
   return service;
 }

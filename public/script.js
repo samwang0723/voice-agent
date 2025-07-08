@@ -1,9 +1,10 @@
 // OAuth Configuration
-const AGENT_SWARM_API = 'https://1511-111-253-204-35.ngrok-free.app/api/v1';
+const AGENT_SWARM_API = 'http://localhost:3030/api/v1';
 const OAUTH_SCOPES = [
+  'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/userinfo.email',
   'https://www.googleapis.com/auth/userinfo.profile',
-  'https://www.googleapis.com/auth/gmail.readonly',
+  'https://www.googleapis.com/auth/calendar',
 ];
 
 // Global variables
