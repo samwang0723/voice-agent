@@ -39,7 +39,7 @@ export class CartesiaTranscriptionService implements ITranscriptionService {
       const receiveTranscripts = (): Promise<string> => {
         return new Promise((resolve, reject) => {
           let fullTranscript = '';
-          sttWs.onMessage(result => {
+          sttWs.onMessage((result) => {
             if (result.type === 'transcript') {
               if (result.isFinal) {
                 fullTranscript += `${result.text} `;
@@ -78,7 +78,10 @@ export class CartesiaTranscriptionService implements ITranscriptionService {
 }
 
 export class CartesiaTextToSpeechService implements ITextToSpeechService {
-  async synthesize(text: string): Promise<Buffer | null> {
+  async synthesize(
+    text: string,
+    abortSignal?: AbortSignal
+  ): Promise<Buffer | null> {
     const config = ttsConfigs.cartesia as TextToSpeechConfig;
     if (!config || !config.apiKey || !config.voiceId) {
       logger.error('Cartesia API key or Voice ID is not configured for TTS.');
@@ -94,6 +97,12 @@ export class CartesiaTextToSpeechService implements ITextToSpeechService {
     }
 
     try {
+      // Check if operation was cancelled before making the API call
+      if (abortSignal?.aborted) {
+        logger.info('Cartesia TTS operation was cancelled before API call');
+        return null;
+      }
+
       const response = await cartesia.tts.bytes({
         modelId: config.modelName,
         transcript: text,
@@ -108,10 +117,21 @@ export class CartesiaTextToSpeechService implements ITextToSpeechService {
         },
       });
 
+      // Check if operation was cancelled after the API call
+      if (abortSignal?.aborted) {
+        logger.info('Cartesia TTS operation was cancelled after API call');
+        return null;
+      }
+
       return Buffer.from(response as any);
     } catch (error) {
+      // Handle AbortError gracefully
+      if (error instanceof Error && error.name === 'AbortError') {
+        logger.info('Cartesia TTS operation was cancelled');
+        return null;
+      }
       logger.error('Cartesia TTS failed:', error);
       return null;
     }
   }
-} 
+}

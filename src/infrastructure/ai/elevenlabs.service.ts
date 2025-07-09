@@ -15,7 +15,10 @@ const getElevenLabsClient = (apiKey: string | undefined) => {
 };
 
 export class ElevenLabsTextToSpeechService implements ITextToSpeechService {
-  async synthesize(text: string): Promise<Buffer | null> {
+  async synthesize(
+    text: string,
+    abortSignal?: AbortSignal
+  ): Promise<Buffer | null> {
     const config = ttsConfigs.elevenlabs as TextToSpeechConfig;
     if (!config || !config.apiKey || !config.voiceId) {
       logger.error('ElevenLabs API key or Voice ID is not configured for TTS.');
@@ -31,6 +34,12 @@ export class ElevenLabsTextToSpeechService implements ITextToSpeechService {
     }
 
     try {
+      // Check if operation was cancelled before starting
+      if (abortSignal?.aborted) {
+        logger.info('ElevenLabs TTS operation was cancelled before starting');
+        return null;
+      }
+
       const audioStream = await elevenlabs.textToSpeech.convert(
         config.voiceId,
         {
@@ -41,11 +50,23 @@ export class ElevenLabsTextToSpeechService implements ITextToSpeechService {
 
       const chunks: Buffer[] = [];
       for await (const chunk of audioStream) {
+        // Check for cancellation during stream processing
+        if (abortSignal?.aborted) {
+          logger.info(
+            'ElevenLabs TTS operation was cancelled during stream processing'
+          );
+          return null;
+        }
         chunks.push(chunk);
       }
 
       return Buffer.concat(chunks);
     } catch (error) {
+      // Handle AbortError specifically
+      if (error instanceof Error && error.name === 'AbortError') {
+        logger.info('ElevenLabs TTS operation was aborted');
+        return null;
+      }
       logger.error('ElevenLabs TTS failed:', error);
       return null;
     }

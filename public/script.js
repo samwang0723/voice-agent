@@ -40,6 +40,9 @@ const DEFAULT_VAD_TUNING = {
 // RMS Energy Gate Threshold (approximately -40 dBFS)
 const RMS_ENERGY_THRESHOLD = 0.01;
 
+// TTS playing state flag for barge-in functionality
+let isTTSPlaying = false;
+
 // VAD Debugging Counters for observability
 const vadDebugCounters = {
   falseStarts: 0,
@@ -519,15 +522,60 @@ function updateStatus(connected) {
   }
 }
 
+// Stop current TTS audio playback and cleanup visual indicators
+function stopCurrentAudio() {
+  try {
+    // Stop any currently playing audio source
+    if (currentAudioSource) {
+      console.log('🎵 Stopping current TTS audio playback');
+      currentAudioSource.stop();
+      currentAudioSource = null;
+    }
+
+    // Remove speaking visual indicators from all agent messages
+    const speakingMessages = document.querySelectorAll(
+      '.message.agent.speaking'
+    );
+    speakingMessages.forEach((msg) => {
+      msg.classList.remove('speaking');
+    });
+
+    // Clear TTS playing flag when stopping audio
+    isTTSPlaying = false;
+
+    // Optionally suspend audio context for complete silence
+    if (audioContext && audioContext.state === 'running') {
+      audioContext
+        .suspend()
+        .then(() => {
+          console.log('🎵 AudioContext suspended for disconnect');
+        })
+        .catch((error) => {
+          console.warn('Failed to suspend AudioContext:', error);
+        });
+    }
+
+    console.log('🎵 Current audio stopped and cleaned up');
+  } catch (error) {
+    console.error('Error stopping current audio:', error);
+  }
+}
+
 // Play TTS audio from base64 data using Web Audio API
 async function playTTSAudio(base64AudioData) {
+  // Defensive validation - prevent audio playback when disconnected
+  if (!isConnected || isUserDisconnected) {
+    console.log('🎵 Skipping TTS audio playback - application is disconnected');
+    return;
+  }
+
   if (!audioContext) {
     console.error('AudioContext not available.');
     addMessage('Cannot play audio: AudioContext not initialized.', 'error');
     return;
   }
 
-  // Resume context if it's suspended (e.g., after long inactivity or on first play)
+  // Resume context if it's suspended (e.g., after long inactivity, on first play, or after disconnect)
   if (audioContext.state === 'suspended') {
     try {
       await audioContext.resume();
@@ -572,6 +620,9 @@ async function playTTSAudio(base64AudioData) {
       lastAgentMessage.classList.add('speaking');
     }
 
+    // Set TTS playing flag for barge-in functionality
+    isTTSPlaying = true;
+
     currentAudioSource.onended = () => {
       // Remove visual indicator when audio ends
       if (lastAgentMessage) {
@@ -579,6 +630,8 @@ async function playTTSAudio(base64AudioData) {
       }
       console.log('🎵 TTS audio playback finished');
       currentAudioSource = null;
+      // Clear TTS playing flag
+      isTTSPlaying = false;
     };
 
     console.log('🎵 Playing TTS audio...');
@@ -692,6 +745,9 @@ function connectWebSocket() {
             clearToken(); // This will clear token and show login prompt
           }
           break;
+        case 'barge-in-ack':
+          addMessage(`Barge-in acknowledged`, 'system');
+          break;
         default:
           addMessage(`${event.data}`);
       }
@@ -706,6 +762,10 @@ function connectWebSocket() {
 
     // Stop voice listening
     stopListening();
+
+    // Stop any ongoing TTS audio playback
+    stopCurrentAudio();
+
     addMessage('Voice detection stopped (connection lost)', 'system');
 
     updateStatus(false);
@@ -721,6 +781,10 @@ function connectWebSocket() {
 
     // Stop voice listening on connection error
     stopListening();
+
+    // Stop any ongoing TTS audio playback
+    stopCurrentAudio();
+
     addMessage('Voice detection stopped (connection error)', 'system');
 
     updateStatus(false);
@@ -739,6 +803,12 @@ function calculateRMS(audioBuffer) {
   }
 
   return Math.sqrt(sum / audioBuffer.length);
+}
+
+// Get dynamic RMS threshold based on TTS playing state
+function getDynamicRMSThreshold() {
+  // Increase threshold during TTS playback to prevent audio feedback loops
+  return isTTSPlaying ? RMS_ENERGY_THRESHOLD * 3 : RMS_ENERGY_THRESHOLD;
 }
 
 // Log VAD statistics for monitoring and tuning
@@ -820,17 +890,36 @@ async function initializeVAD() {
           onSpeechStart: () => {
             console.log('Speech started');
             vadDebugCounters.trueStarts++;
+
+            // Implement barge-in: stop current TTS audio when user starts speaking
+            if (isTTSPlaying) {
+              console.log('🎤 User barge-in detected - stopping TTS audio');
+              stopCurrentAudio();
+
+              // Send barge-in message to server
+              if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'barge-in' }));
+                console.log('📤 Sent barge-in message to server');
+              }
+            }
+
             updateStatus(isConnected);
           },
           onSpeechEnd: async (audio) => {
             console.log('Speech ended, audio length:', audio.length);
             updateStatus(isConnected);
 
-            // Apply RMS energy gate before processing
+            // Apply RMS energy gate before processing with dynamic threshold
             const rmsEnergy = calculateRMS(audio);
-            console.log('Audio RMS energy:', rmsEnergy.toFixed(4));
+            const dynamicThreshold = getDynamicRMSThreshold();
+            console.log(
+              'Audio RMS energy:',
+              rmsEnergy.toFixed(4),
+              'Threshold:',
+              dynamicThreshold.toFixed(4)
+            );
 
-            if (rmsEnergy < RMS_ENERGY_THRESHOLD) {
+            if (rmsEnergy < dynamicThreshold) {
               console.log('Audio dropped by RMS energy gate (too quiet)');
               vadDebugCounters.gateDrops++;
               return; // Skip processing low-energy audio
@@ -952,6 +1041,9 @@ function disconnect() {
   if (ws && ws.readyState === WebSocket.OPEN) {
     // Stop voice listening first
     stopListening();
+
+    // Stop any ongoing TTS audio playback immediately
+    stopCurrentAudio();
 
     // Mark as user-initiated disconnect to prevent auto-reconnect
     isUserDisconnected = true;

@@ -111,6 +111,23 @@ export class WebSocketHandler {
             `[${sessionId}] Updated session context:`,
             message.context
           );
+        } else if (message.type === 'barge-in') {
+          try {
+            await this.voiceAgentService.cancelCurrentTTS(session.id);
+            logger.info(`[${sessionId}] Barge-in processed successfully`);
+
+            // Send acknowledgment response
+            WebSocketGateway.send(ws, {
+              type: 'barge-in-ack',
+              message: 'Barge-in processed successfully',
+            });
+          } catch (error) {
+            logger.error(`[${sessionId}] Error processing barge-in:`, error);
+            WebSocketGateway.sendError(
+              ws,
+              'Failed to process barge-in request'
+            );
+          }
         }
         return; // Context message handled, no further action needed
       } catch (error) {

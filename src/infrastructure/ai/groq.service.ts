@@ -53,7 +53,10 @@ export class GroqTranscriptionService implements ITranscriptionService {
 }
 
 export class GroqTextToSpeechService implements ITextToSpeechService {
-  async synthesize(text: string): Promise<Buffer | null> {
+  async synthesize(
+    text: string,
+    abortSignal?: AbortSignal
+  ): Promise<Buffer | null> {
     const config = ttsConfigs.groq;
     if (!config || !config.apiKey) {
       logger.error('Groq API key is not configured for TTS.');
@@ -69,6 +72,11 @@ export class GroqTextToSpeechService implements ITextToSpeechService {
     }
 
     try {
+      if (abortSignal?.aborted) {
+        logger.info('Groq TTS synthesis was cancelled');
+        return null;
+      }
+
       const response = await groq.audio.speech.create({
         model: config.modelName,
         voice: 'Basil-PlayAI', //Basil-PlayAI, Cheyenne-PlayAI
@@ -76,9 +84,27 @@ export class GroqTextToSpeechService implements ITextToSpeechService {
         response_format: 'wav',
       });
 
+      // Check for cancellation before processing the response
+      if (abortSignal?.aborted) {
+        logger.info('Groq TTS cancelled before ArrayBuffer conversion');
+        return null;
+      }
+
       const arrayBuffer = await response.arrayBuffer();
+
+      // Final check for cancellation after ArrayBuffer conversion
+      if (abortSignal?.aborted) {
+        logger.info('Groq TTS cancelled after ArrayBuffer conversion');
+        return null;
+      }
+
       return Buffer.from(arrayBuffer);
     } catch (error) {
+      // Handle AbortError specifically
+      if (error instanceof Error && error.name === 'AbortError') {
+        logger.info('Groq TTS operation was cancelled');
+        return null;
+      }
       logger.error('Groq TTS failed:', error);
       return null;
     }

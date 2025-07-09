@@ -15,6 +15,8 @@ import type { AgentSwarmLanguageModel } from '../infrastructure/ai/agentSwarmLan
 import type { IToolIntentDetector } from '../domain/intent/intentDetector.service';
 
 export class VoiceAgentService {
+  private activeTTSControllers: Map<string, AbortController> = new Map();
+
   constructor(
     private readonly localLanguageModel: ILanguageModel,
     private readonly conversationRepository: IConversationRepository,
@@ -37,6 +39,7 @@ export class VoiceAgentService {
     aiResponse: string;
     audioResponse: Buffer | null;
   }> {
+    const sessionId = context?.session?.id || conversationId;
     const overallStartTime = Date.now();
     logger.info(
       `[${conversationId}] Starting audio processing with STT: ${sttEngine}, TTS: ${ttsEngine}`
@@ -228,7 +231,30 @@ export class VoiceAgentService {
     // 6. Synthesize audio response using the selected service
     const ttsStartTime = Date.now();
     const ttsService = getTextToSpeechService(ttsEngine);
-    const audioResponse = await ttsService.synthesize(aiResponse);
+
+    // Create AbortController for TTS cancellation
+    const abortController = new AbortController();
+    this.activeTTSControllers.set(sessionId, abortController);
+
+    let audioResponse: Buffer | null = null;
+    try {
+      audioResponse = await ttsService.synthesize(
+        aiResponse,
+        abortController.signal
+      );
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        logger.info(
+          `[${conversationId}] TTS synthesis was cancelled for session ${sessionId}`
+        );
+      } else {
+        logger.error(`[${conversationId}] TTS synthesis failed:`, error);
+      }
+    } finally {
+      // Clean up the controller from the map
+      this.activeTTSControllers.delete(sessionId);
+    }
+
     const ttsDuration = Date.now() - ttsStartTime;
     logger.info(
       `[${conversationId}] Text-to-speech synthesis (${ttsEngine}) took ${ttsDuration}ms`
@@ -254,5 +280,16 @@ export class VoiceAgentService {
     );
 
     return { transcript, aiResponse, audioResponse };
+  }
+
+  public async cancelCurrentTTS(sessionId: string): Promise<void> {
+    const controller = this.activeTTSControllers.get(sessionId);
+    if (controller) {
+      logger.info(`Cancelling active TTS operation for session ${sessionId}`);
+      controller.abort();
+      this.activeTTSControllers.delete(sessionId);
+    } else {
+      logger.debug(`No active TTS operation found for session ${sessionId}`);
+    }
   }
 }

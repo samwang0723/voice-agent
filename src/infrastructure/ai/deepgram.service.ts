@@ -6,10 +6,12 @@ import type {
 } from '../../domain/audio/audio.service';
 import logger from '../logger';
 
-const getDeepgramClient = (apiKey: string | undefined): DeepgramClient | null => {
+const getDeepgramClient = (
+  apiKey: string | undefined
+): DeepgramClient | null => {
   if (!apiKey) {
     logger.warn(
-      'DEEPGRAM_API_KEY is not set. Deepgram services will not be available.',
+      'DEEPGRAM_API_KEY is not set. Deepgram services will not be available.'
     );
     return null;
   }
@@ -18,12 +20,20 @@ const getDeepgramClient = (apiKey: string | undefined): DeepgramClient | null =>
 
 const getAudioBuffer = async (
   stream: ReadableStream<Uint8Array>,
+  abortSignal?: AbortSignal
 ): Promise<Buffer> => {
   const reader = stream.getReader();
   const chunks: Uint8Array[] = [];
 
   // eslint-disable-next-line no-constant-condition
   while (true) {
+    if (abortSignal?.aborted) {
+      reader.releaseLock();
+      const error = new Error('Operation was aborted');
+      error.name = 'AbortError';
+      throw error;
+    }
+
     const { done, value } = await reader.read();
     if (done) break;
     if (value) {
@@ -47,13 +57,10 @@ export class DeepgramTranscriptionService implements ITranscriptionService {
 
     try {
       const { result, error } =
-        await deepgram.listen.prerecorded.transcribeFile(
-          audio,
-          {
-            model: config.modelName,
-            smart_format: true,
-          },
-        );
+        await deepgram.listen.prerecorded.transcribeFile(audio, {
+          model: config.modelName,
+          smart_format: true,
+        });
 
       if (error) {
         throw error;
@@ -70,7 +77,10 @@ export class DeepgramTranscriptionService implements ITranscriptionService {
 }
 
 export class DeepgramTextToSpeechService implements ITextToSpeechService {
-  async synthesize(text: string): Promise<Buffer | null> {
+  async synthesize(
+    text: string,
+    abortSignal?: AbortSignal
+  ): Promise<Buffer | null> {
     const config = ttsConfigs.deepgram;
     if (!config || !config.apiKey) {
       logger.error('Deepgram API key is not configured for TTS.');
@@ -86,25 +96,33 @@ export class DeepgramTextToSpeechService implements ITextToSpeechService {
     }
 
     try {
+      if (abortSignal?.aborted) {
+        return null;
+      }
+
       const response = await deepgram.speak.request(
         { text },
         {
           model: config.modelName,
           encoding: 'linear16',
           container: 'wav',
-        },
+        }
       );
 
       const stream = await response.getStream();
       if (stream) {
-        return getAudioBuffer(stream);
+        return getAudioBuffer(stream, abortSignal);
       }
 
       logger.error('Deepgram TTS failed: No stream received.');
       return null;
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        logger.info('Deepgram TTS synthesis was cancelled');
+        return null;
+      }
       logger.error('Deepgram TTS failed:', error);
       return null;
     }
   }
-} 
+}

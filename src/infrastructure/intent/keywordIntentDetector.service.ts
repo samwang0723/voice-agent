@@ -160,6 +160,13 @@ export class KeywordIntentDetector implements IToolIntentDetector {
       'jira tasks',
       'jira project',
     ],
+    reddit: [
+      'reddit',
+      'reddit search',
+      'reddit post',
+      'reddit comment',
+      'reddit thread',
+    ],
   };
 
   /**
@@ -173,6 +180,7 @@ export class KeywordIntentDetector implements IToolIntentDetector {
     calendar: 2, // Calendar terms can be ambiguous
     restaurant: 2, // Restaurant terms can be ambiguous
     websearch: 2, // Web search terms are often generic
+    reddit: 1, // Reddit terms is highly specific
   };
 
   /**

@@ -199,6 +199,17 @@ export const intentPatterns: Record<string, RegExp[]> = {
     /\bjira\s+(?:search|query|filter|board|dashboard)\b/i,
     /\b(?:search|find)\s+(?:jira\s+)?(?:tickets|issues)\b/i,
   ],
+
+  reddit: [
+    /\breddit\b/i,
+    /\breddit\s+search\b/i,
+    /\breddit\s+post\b/i,
+    /\breddit\s+comment\b/i,
+    /\breddit\s+thread\b/i,
+    /\breddit\s+subreddit\b/i,
+    /\b(?:search|find|look\s+up)\s+(?:in\s+)?reddit\b/i,
+    /\b(?:check|view)\s+reddit\b/i,
+  ],
 };
 
 /**
@@ -286,6 +297,13 @@ export const keywordWeights: Record<string, number> = {
   // Only keeping highly specific action verbs
   cancel: 0.6,
   delete: 0.6,
+
+  // Reddit-specific high-confidence keywords
+  reddit: 0.9,
+  subreddit: 0.8,
+  post: 0.7,
+  comment: 0.6,
+  thread: 0.5,
 
   // Tool-specific only - removed all generic words that cause cross-tool false positives
 
