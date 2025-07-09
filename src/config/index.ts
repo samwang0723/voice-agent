@@ -113,6 +113,12 @@ export const ttsConfigs: Record<string, TextToSpeechConfig> = {
     apiKey: process.env.ELEVENLABS_API_KEY,
     voiceId: process.env.ELEVENLABS_VOICE_ID,
   },
+  azure: {
+    provider: 'azure',
+    modelName: 'azure-tts',
+    apiKey: process.env.AZURE_SPEECH_API_KEY,
+    voiceId: process.env.AZURE_TTS_VOICE_ID || 'en-GB-OllieMultilingualNeural',
+  },
 };
 
 // Agent-Swarm Configuration
