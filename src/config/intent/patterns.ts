@@ -210,6 +210,18 @@ export const intentPatterns: Record<string, RegExp[]> = {
     /\b(?:search|find|look\s+up)\s+(?:in\s+)?reddit\b/i,
     /\b(?:check|view)\s+reddit\b/i,
   ],
+
+  music: [
+    /\bmusic\b/i,
+    /\bsong\b/i,
+    /\bplay\b/i,
+    /\bpause\b/i,
+    /\bnext\b/i,
+    /\blouder\b/i,
+    /\bquieter\b/i,
+    /\bvolume\b/i,
+    /\bvolume up\b/i,
+  ],
 };
 
 /**
@@ -304,6 +316,12 @@ export const keywordWeights: Record<string, number> = {
   post: 0.7,
   comment: 0.6,
   thread: 0.5,
+
+  // Music-specific high-confidence keywords
+  music: 0.9,
+  song: 0.8,
+  play: 0.7,
+  pause: 0.6,
 
   // Tool-specific only - removed all generic words that cause cross-tool false positives
 

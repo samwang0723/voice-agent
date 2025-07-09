@@ -167,6 +167,26 @@ export class KeywordIntentDetector implements IToolIntentDetector {
       'reddit comment',
       'reddit thread',
     ],
+    music: [
+      'music',
+      'song',
+      'play',
+      'pause',
+      'next',
+      'louder',
+      'quieter',
+      'volume',
+      'volume up',
+      'volume down',
+      'volume up',
+      'apple music',
+      'play music',
+      'play song',
+      'adjust volume',
+      'next track',
+      'pause music',
+      'pause song',
+    ],
   };
 
   /**
@@ -181,6 +201,7 @@ export class KeywordIntentDetector implements IToolIntentDetector {
     restaurant: 2, // Restaurant terms can be ambiguous
     websearch: 2, // Web search terms are often generic
     reddit: 1, // Reddit terms is highly specific
+    music: 2, // Music terms are often generic
   };
 
   /**
