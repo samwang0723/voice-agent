@@ -851,7 +851,9 @@ async function initializeVAD() {
     console.log('VAD library loaded successfully');
 
     // Initialize RNNoise after VAD setup
-    await initializeRNNoise();
+    if (isNoiseReductionEnabled) {
+      await initializeRNNoise();
+    }
 
     // Try multiple configurations for better compatibility
     const vadConfigs = [
@@ -1180,11 +1182,13 @@ function setupEventListeners() {
           type: 'config',
           sttEngine,
           ttsEngine,
-          noiseReduction: true,
+          noiseReduction: isNoiseReductionEnabled,
         })
       );
       addMessage(
-        `Configuration updated - STT: ${sttEngine}, TTS: ${ttsEngine}, Noise Reduction: 'ON'}`,
+        `Configuration updated - STT: ${sttEngine}, TTS: ${ttsEngine}, Noise Reduction: '${
+          isNoiseReductionEnabled ? 'ON' : 'OFF'
+        }'`,
         'system'
       );
     }

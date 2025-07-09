@@ -38,10 +38,10 @@ export const modelConfigs: Record<string, ModelConfig> = {
     modelName: 'gemini-1.5-flash-latest',
     apiKey: process.env.GOOGLE_API_KEY,
   },
-  'claude-3-haiku': {
-    provider: 'anthropic',
-    modelName: 'claude-3-haiku-20240307',
-    apiKey: process.env.ANTHROPIC_API_KEY,
+  'gemini-2.0-flash': {
+    provider: 'google',
+    modelName: 'gemini-2.0-flash',
+    apiKey: process.env.GOOGLE_API_KEY,
   },
   'gpt-4o': {
     provider: 'openai',
@@ -137,7 +137,7 @@ export const intentDetectorConfig: IntentDetectorConfig = {
 
 // Function to get the current model from environment variables or a default
 export const getCurrentModelKey = (): string => {
-  return process.env.LLM_MODEL || 'gemini-1.5-flash';
+  return process.env.LLM_MODEL || 'gemini-2.0-flash';
 };
 
 export const getCurrentModelConfig = (): ModelConfig => {

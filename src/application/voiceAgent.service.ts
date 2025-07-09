@@ -161,7 +161,8 @@ export class VoiceAgentService {
         aiResponse = await this.localLanguageModel.generateResponse(
           conversation.getHistory(),
           transcript,
-          context
+          context,
+          ttsEngine
         );
         logger.debug(`[${conversationId}] Local AI Response: "${aiResponse}"`);
       }
@@ -187,7 +188,8 @@ export class VoiceAgentService {
           aiResponse = await this.localLanguageModel.generateResponse(
             conversation.getHistory(),
             transcript,
-            context
+            context,
+            ttsEngine
           );
           const fallbackDuration = Date.now() - fallbackStartTime;
           logger.info(

@@ -4,6 +4,7 @@ export interface ILanguageModel {
   generateResponse(
     history: Message[],
     newUserMessage: string,
-    context?: any
+    context?: any,
+    ttsEngine?: string
   ): Promise<string>;
-} 
+}

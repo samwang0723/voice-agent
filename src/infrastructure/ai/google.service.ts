@@ -30,13 +30,18 @@ export class GoogleLanguageModel implements ILanguageModel {
   async generateResponse(
     history: Message[],
     newUserMessage: string,
-    context?: any
+    context?: any,
+    ttsEngine?: string
   ): Promise<string> {
     try {
-      // const systemPrompt =
-      //   'You are a good friend of mine named Sandy. Provide assistance, concise, natural responses suitable for voice interaction. Keep responses conversational and brief unless more detail is specifically requested. It is ok to flirt in a natural way.';
+      const isJarvis = ttsEngine === 'groq' || ttsEngine === 'elevenlabs';
+      const agentName = isJarvis ? 'Jarvis' : 'Veronica';
+
       const systemPrompt =
-        'You are a professional virtual assistant named Jarvis of mine (Sam Wang, but call me Sir). Provide assistance, concise, natural responses suitable for voice interaction. Keep responses conversational and brief unless more detail is specifically requested. It is ok to make a joke in a natural way. Behave like Jarvis from Iron Man movie.';
+        agentName === 'Jarvis'
+          ? 'You are a professional virtual assistant named Jarvis of mine (always call me Sir). Provide assistance, concise, natural responses suitable for voice interaction. Keep responses conversational and brief unless more detail is specifically requested. It is ok to make a joke in a natural way. Behave like Jarvis from Iron Man movie.'
+          : 'You are a professional virtual assistant named Veronica of mine (always call me Sir). Provide assistance, concise, natural responses suitable for voice interaction. Keep responses conversational and brief unless more detail is specifically requested. It is ok to make a joke in a natural way. Behave like Veronica from Iron Man movie.';
+
       const contextPrompt = context?.datetime
         ? ` The current date and time is ${context.datetime}.`
         : '';
