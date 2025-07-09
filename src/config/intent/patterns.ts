@@ -222,6 +222,35 @@ export const intentPatterns: Record<string, RegExp[]> = {
     /\bvolume\b/i,
     /\bvolume up\b/i,
   ],
+
+  weather: [
+    /\bweather\b/i,
+    /\bweather forecast\b/i,
+    /\bweather report\b/i,
+    /\bweather update\b/i,
+    /\bweather in\b/i,
+    /\btemperature\b/i,
+    /\braining\b/i,
+    /\bsnow\b/i,
+    /\bsun\b/i,
+    /\bcloud\b/i,
+    /\bfog\b/i,
+    /\bwind\b/i,
+    /\bhumidity\b/i,
+    /\brain\b/i,
+    /\bsunny\b/i,
+    /\bcloudy\b/i,
+    /\bfoggy\b/i,
+    /\bwindy\b/i,
+    /\bhumid\b/i,
+    /\bhot\b/i,
+    /\bcoat\b/i,
+    /\bumbrella\b/i,
+    /\braincoat\b/i,
+    /\brain jacket\b/i,
+    /\b(?:search|find|look\s+up)\s+(?:in\s+)?weather\b/i,
+    /\b(?:check|view)\s+weather\b/i,
+  ],
 };
 
 /**
@@ -322,6 +351,18 @@ export const keywordWeights: Record<string, number> = {
   song: 0.8,
   play: 0.7,
   pause: 0.6,
+
+  // Weather-specific high-confidence keywords
+  weather: 0.9,
+  forecast: 0.8,
+  temperature: 0.4,
+  raining: 0.5,
+  snow: 0.5,
+  sunny: 0.5,
+  cloudy: 0.5,
+  foggy: 0.5,
+  windy: 0.5,
+  humid: 0.5,
 
   // Tool-specific only - removed all generic words that cause cross-tool false positives
 

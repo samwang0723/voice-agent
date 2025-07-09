@@ -160,6 +160,33 @@ export class KeywordIntentDetector implements IToolIntentDetector {
       'jira tasks',
       'jira project',
     ],
+    weather: [
+      'weather',
+      'weather forecast',
+      'weather report',
+      'weather update',
+      'weather in',
+      'temperature',
+      'raining',
+      'snow',
+      'sun',
+      'cloud',
+      'fog',
+      'wind',
+      'humidity',
+      'rain',
+      'sunny',
+      'cloudy',
+      'foggy',
+      'windy',
+      'humid',
+      'hot',
+      'coat',
+      'umbrella',
+      'raincoat',
+      'rain jacket',
+      'rain jacket',
+    ],
     reddit: [
       'reddit',
       'reddit search',
@@ -202,6 +229,7 @@ export class KeywordIntentDetector implements IToolIntentDetector {
     websearch: 2, // Web search terms are often generic
     reddit: 1, // Reddit terms is highly specific
     music: 2, // Music terms are often generic
+    weather: 1, // Weather terms is highly specific
   };
 
   /**
