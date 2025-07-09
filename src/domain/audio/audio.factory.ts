@@ -11,6 +11,7 @@ import {
   DeepgramTextToSpeechService,
 } from '../../infrastructure/ai/deepgram.service';
 import { ElevenLabsTextToSpeechService } from '../../infrastructure/ai/elevenlabs.service';
+import { AzureTranscriptionService } from '../../infrastructure/ai/azure.service';
 import type {
   ITranscriptionService,
   ITextToSpeechService,
@@ -21,6 +22,7 @@ const transcriptionServices: Record<string, ITranscriptionService> = {
   groq: new GroqTranscriptionService(),
   cartesia: new CartesiaTranscriptionService(),
   deepgram: new DeepgramTranscriptionService(),
+  azure: new AzureTranscriptionService(),
 };
 
 const ttsServices: Record<string, ITextToSpeechService> = {

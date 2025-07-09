@@ -12,7 +12,8 @@ export type ModelProvider =
   | 'groq'
   | 'cartesia'
   | 'deepgram'
-  | 'elevenlabs';
+  | 'elevenlabs'
+  | 'azure';
 
 export type IntentDetectorMode = 'keyword' | 'pattern' | 'hybrid';
 
@@ -73,6 +74,13 @@ export const transcriptionConfigs: Record<string, TranscriptionConfig> = {
     modelName: 'nova-2',
     apiKey: process.env.DEEPGRAM_API_KEY,
     language: 'en',
+    inputType: 'container',
+  },
+  azure: {
+    provider: 'azure',
+    modelName: 'azure-speech',
+    apiKey: process.env.AZURE_SPEECH_API_KEY,
+    language: 'en-US',
     inputType: 'container',
   },
 };

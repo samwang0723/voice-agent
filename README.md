@@ -78,6 +78,10 @@ GOOGLE_API_KEY="YOUR_GOOGLE_AI_API_KEY"
 # Groq API Key for fast STT and TTS
 GROQ_API_KEY="YOUR_GROQ_API_KEY"
 
+# Azure Speech Service (for STT)
+AZURE_SPEECH_API_KEY="YOUR_AZURE_SPEECH_API_KEY"
+AZURE_SPEECH_REGION="YOUR_AZURE_REGION"  # e.g., "eastus", "westus2", "centralus"
+
 # Optional: Specify the LLM model to use (defaults to 'gemini-1.5-flash')
 # Other options: 'claude-3-haiku', 'gpt-4o' (ensure corresponding API keys are set)
 # LLM_MODEL="gemini-1.5-flash"
