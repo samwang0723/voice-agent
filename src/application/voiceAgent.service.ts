@@ -117,7 +117,10 @@ export class VoiceAgentService {
 
     // Determine backend based on conditions
     let selectedBackend: string;
-    if (intentResult.requiresTools) {
+    if (
+      process.env.SKIP_LOCAL_HANDLE === 'true' ||
+      intentResult.requiresTools
+    ) {
       selectedBackend = isAuthenticated ? 'agent-swarm' : 'auth-prompt';
     } else {
       selectedBackend = 'local';
