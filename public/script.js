@@ -1,5 +1,7 @@
+import createRNNWasmModule from './rnnoise.js';
+
 // OAuth Configuration
-const AGENT_SWARM_API = 'http://localhost:3030/api/v1';
+const AGENT_SWARM_API = 'https://8911e5ac7f82.ngrok-free.app/api/v1';
 const OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/userinfo.email',
@@ -1216,19 +1218,18 @@ async function initializeRNNoise() {
     console.log('Initializing RNNoise...');
     addMessage('Loading noise reduction module...', 'system');
 
-    // Check if RNNoise module is available
-    if (typeof createRNNWasmModule === 'undefined') {
-      console.warn('RNNoise module not available, skipping noise reduction');
+    // Load the RNNoise WASM module with proper error handling
+    try {
+      rnnoiseModule = await createRNNWasmModule();
+      await rnnoiseModule.ready;
+    } catch (moduleError) {
+      console.warn('RNNoise WASM module failed to load:', moduleError);
       addMessage(
         'Noise reduction not available - continuing without it',
         'system'
       );
       return;
     }
-
-    // Load the RNNoise WASM module
-    rnnoiseModule = await createRNNWasmModule();
-    await rnnoiseModule.ready;
 
     // Initialize RNNoise
     rnnoiseModule._rnnoise_init();
