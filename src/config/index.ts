@@ -1,5 +1,3 @@
-import logger from '../infrastructure/logger';
-
 export const serverConfig = {
   port: process.env.PORT || 3000,
   logLevel: process.env.LOG_LEVEL || 'info',
@@ -15,8 +13,6 @@ export type ModelProvider =
   | 'elevenlabs'
   | 'azure';
 
-export type IntentDetectorMode = 'keyword' | 'pattern' | 'hybrid';
-
 export interface ModelConfig {
   provider: ModelProvider;
   modelName: string;
@@ -31,25 +27,6 @@ export interface TranscriptionConfig extends ModelConfig {
   sampleRate?: number;
   inputType?: 'raw' | 'container';
 }
-
-// AI Model Configurations
-export const modelConfigs: Record<string, ModelConfig> = {
-  'gemini-1.5-flash': {
-    provider: 'google',
-    modelName: 'gemini-1.5-flash-latest',
-    apiKey: process.env.GOOGLE_API_KEY,
-  },
-  'gemini-2.0-flash': {
-    provider: 'google',
-    modelName: 'gemini-2.0-flash',
-    apiKey: process.env.GOOGLE_API_KEY,
-  },
-  'gpt-4o': {
-    provider: 'openai',
-    modelName: 'gpt-4o',
-    apiKey: process.env.OPENAI_API_KEY,
-  },
-};
 
 // Transcription Model Configurations
 export const transcriptionConfigs: Record<string, TranscriptionConfig> = {
@@ -129,11 +106,6 @@ export interface AgentSwarmConfig {
   retryDelay: number;
 }
 
-export interface IntentDetectorConfig {
-  mode: IntentDetectorMode;
-  confidenceThreshold: number;
-}
-
 export const agentSwarmConfig: AgentSwarmConfig = {
   baseURL: process.env.AGENT_SWARM_API_URL || 'http://localhost:8900/api/v1',
   streamTimeout: parseInt(process.env.AGENT_SWARM_STREAM_TIMEOUT || '30000'),
@@ -141,49 +113,7 @@ export const agentSwarmConfig: AgentSwarmConfig = {
   retryDelay: parseInt(process.env.AGENT_SWARM_RETRY_DELAY || '1000'),
 };
 
-// Intent Detector Configuration
-export const intentDetectorConfig: IntentDetectorConfig = {
-  mode: (process.env.INTENT_DETECTOR_MODE as IntentDetectorMode) || 'keyword',
-  confidenceThreshold: parseFloat(
-    process.env.INTENT_CONFIDENCE_THRESHOLD || '0.5'
-  ),
-};
-
-// Function to get the current model from environment variables or a default
-export const getCurrentModelKey = (): string => {
-  return process.env.LLM_MODEL || 'gemini-2.0-flash';
-};
-
-export const getCurrentModelConfig = (): ModelConfig => {
-  const modelKey = getCurrentModelKey();
-  const config = modelConfigs[modelKey];
-  if (!config) {
-    throw new Error(`Invalid LLM_MODEL key: ${modelKey}`);
-  }
-  return config;
-};
-
 // Lazy validation helper function for agent-swarm configuration
 export const isAgentSwarmConfigured = (): boolean => {
   return !!agentSwarmConfig.baseURL;
 };
-
-// Function to get the current intent detector mode
-export const getIntentDetectorMode = (): IntentDetectorMode => {
-  return intentDetectorConfig.mode;
-};
-
-// Log the current model configuration on startup
-const currentModelInfo = getCurrentModelConfig();
-logger.info(
-  `Using LLM model: ${currentModelInfo.modelName} (Provider: ${currentModelInfo.provider})`
-);
-
-if (!currentModelInfo.apiKey) {
-  logger.warn(
-    `API key for ${currentModelInfo.provider} is not configured. AI features may not work.`
-  );
-}
-
-// Log dual-AI runtime initialization
-logger.info('Dual-AI runtime initialized');

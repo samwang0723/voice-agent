@@ -1,7 +1,7 @@
 import createRNNWasmModule from './rnnoise.js';
 
 // OAuth Configuration
-const AGENT_SWARM_API = 'http://localhost:3030/api/v1';
+const AGENT_SWARM_API = 'https://50c21f73c5ca.ngrok-free.app/api/v1';
 const OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/userinfo.email',

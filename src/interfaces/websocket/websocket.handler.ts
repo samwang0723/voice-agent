@@ -4,7 +4,6 @@ import { Session } from '../../domain/session/session.entity';
 import type { ISessionRepository } from '../../domain/session/session.repository';
 import logger from '../../infrastructure/logger';
 import { WebSocketGateway } from './websocket.gateway';
-import { AgentSwarmService } from '../../infrastructure/ai/agentSwarm.service';
 
 // Define the shape of the data attached to our WebSocket
 export type WebSocketData = {
@@ -15,14 +14,10 @@ export type WebSocketData = {
 export type VoiceAgentWSCotext = WSContext<WebSocketData>;
 
 export class WebSocketHandler {
-  private readonly agentSwarmService: AgentSwarmService;
-
   constructor(
     private readonly voiceAgentService: VoiceAgentService,
     private readonly sessionRepository: ISessionRepository
-  ) {
-    this.agentSwarmService = new AgentSwarmService();
-  }
+  ) {}
 
   public async onOpen(
     ws: VoiceAgentWSCotext,

@@ -44,9 +44,7 @@ export class AgentSwarmService {
     this.maxRetries = agentSwarmConfig.maxRetries;
     this.retryDelay = agentSwarmConfig.retryDelay;
 
-    logger.info(
-      `Initialized Agent-Swarm Service with base URL: ${this.baseURL}`
-    );
+    logger.info(`Initialized Agent-Core Engine with base URL: ${this.baseURL}`);
   }
 
   private getHeaders(

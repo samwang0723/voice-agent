@@ -1,4 +1,3 @@
-import type { ILanguageModel } from '../domain/ai/ai.service';
 import type { IConversationRepository } from '../domain/conversation/conversation.repository';
 import {
   Conversation,
@@ -11,17 +10,14 @@ import {
   getTextToSpeechService,
 } from '../domain/audio/audio.factory';
 import { transcriptionConfigs } from '../config';
-import type { AgentSwarmLanguageModel } from '../infrastructure/ai/agentSwarmLanguageModel.service';
-import type { IToolIntentDetector } from '../domain/intent/intentDetector.service';
+import { AgentSwarmService } from '../infrastructure/ai/agentSwarm.service';
 
 export class VoiceAgentService {
   private activeTTSControllers: Map<string, AbortController> = new Map();
 
   constructor(
-    private readonly localLanguageModel: ILanguageModel,
     private readonly conversationRepository: IConversationRepository,
-    private readonly agentSwarmLanguageModel: AgentSwarmLanguageModel,
-    private readonly intentDetector: IToolIntentDetector
+    private readonly agentSwarmService: AgentSwarmService
   ) {
     logger.info(
       'VoiceAgentService initialized with dual-AI runtime (local + agent-swarm)'
@@ -88,20 +84,7 @@ export class VoiceAgentService {
     }
     conversation.addMessage(new Message('user', transcript));
 
-    // 4. Detect tool intent from transcript
-    const intentDetectionStartTime = Date.now();
-    const intentResult = await this.intentDetector.detectToolIntent(transcript);
-    const intentDetectionDuration = Date.now() - intentDetectionStartTime;
-    logger.info(
-      `[${conversationId}] Intent detection took ${intentDetectionDuration}ms.`
-    );
-    logger.debug(`[${conversationId}] Tool intent detection result:`, {
-      requiresTools: intentResult.requiresTools,
-      detectedTools: intentResult.detectedTools,
-      confidence: intentResult.confidence,
-    });
-
-    // 5. Generate AI response with dynamic routing
+    // 4. Generate AI response with dynamic routing
     const aiResponseStartTime = Date.now();
     let aiResponse: string;
     let aiResponseDuration = 0;
@@ -116,15 +99,7 @@ export class VoiceAgentService {
     });
 
     // Determine backend based on conditions
-    let selectedBackend: string;
-    if (
-      process.env.SKIP_LOCAL_HANDLE === 'true' ||
-      intentResult.requiresTools
-    ) {
-      selectedBackend = isAuthenticated ? 'agent-swarm' : 'auth-prompt';
-    } else {
-      selectedBackend = 'local';
-    }
+    const selectedBackend = isAuthenticated ? 'agent-swarm' : 'auth-prompt';
 
     try {
       if (selectedBackend === 'agent-swarm') {
@@ -142,32 +117,23 @@ export class VoiceAgentService {
         logger.debug(
           `[${conversationId}] Generating response using agent-swarm with session: ${context.session.id}`
         );
-        aiResponse = await this.agentSwarmLanguageModel.generateResponse(
-          conversation.getHistory(),
+        const response = await this.agentSwarmService.chat(
           transcript,
+          context.session.bearerToken,
           enhancedContext
         );
+        aiResponse = response.response;
 
         logger.debug(
           `[${conversationId}] Agent-swarm AI Response: "${aiResponse}"`
         );
-      } else if (selectedBackend === 'auth-prompt') {
+      } else {
         // Tools detected but user is not authenticated - prompt for authentication
         logger.debug(
           `[${conversationId}] Tools detected but user not authenticated - prompting for auth`
         );
         aiResponse =
           'I can help you with that once you sign in to your account. Please authenticate to access external tools like email, calendar, and booking services.';
-      } else {
-        // No tools detected - use local AI
-        logger.debug(`[${conversationId}] Using local AI (no tools detected)`);
-        aiResponse = await this.localLanguageModel.generateResponse(
-          conversation.getHistory(),
-          transcript,
-          context,
-          ttsEngine
-        );
-        logger.debug(`[${conversationId}] Local AI Response: "${aiResponse}"`);
       }
 
       aiResponseDuration = Date.now() - aiResponseStartTime;
@@ -181,54 +147,9 @@ export class VoiceAgentService {
         error
       );
 
-      // Implement fallback behavior
-      if (selectedBackend === 'agent-swarm') {
-        logger.info(
-          `[${conversationId}] Agent-swarm failed, attempting fallback to local AI`
-        );
-        const fallbackStartTime = Date.now();
-        try {
-          aiResponse = await this.localLanguageModel.generateResponse(
-            conversation.getHistory(),
-            transcript,
-            context,
-            ttsEngine
-          );
-          const fallbackDuration = Date.now() - fallbackStartTime;
-          logger.info(
-            `[${conversationId}] Successfully generated response using local AI fallback in ${fallbackDuration}ms`
-          );
-        } catch (fallbackError) {
-          const fallbackDuration = Date.now() - fallbackStartTime;
-          logger.error(
-            `[${conversationId}] Local AI fallback also failed after ${fallbackDuration}ms:`,
-            fallbackError
-          );
-          aiResponse =
-            '[Error: AI service temporarily unavailable. Please try again later.]';
-        }
-      } else if (selectedBackend === 'local') {
-        // For local AI mode, provide appropriate error message
-        if (error instanceof Error) {
-          if (error.message.includes('API key')) {
-            aiResponse =
-              '[Error: AI service configuration issue. Please contact support.]';
-          } else if (error.message.includes('rate limit')) {
-            aiResponse =
-              '[Error: AI service temporarily unavailable due to rate limiting. Please try again later.]';
-          } else {
-            aiResponse =
-              '[Error: Could not generate AI response. Please try again.]';
-          }
-        } else {
-          aiResponse =
-            '[Error: Could not generate AI response. Please try again.]';
-        }
-      } else {
-        // For auth-prompt case, this shouldn't happen but handle gracefully
-        aiResponse =
-          "I apologize, but I'm having trouble processing your request right now. Please try again.";
-      }
+      // For auth-prompt case, this shouldn't happen but handle gracefully
+      aiResponse =
+        "I apologize, but I'm having trouble processing your request right now. Please try again.";
     }
 
     conversation.addMessage(new Message('assistant', aiResponse));
@@ -281,7 +202,7 @@ export class VoiceAgentService {
     // Log overall processing summary
     const overallDuration = Date.now() - overallStartTime;
     logger.info(
-      `[${conversationId}] Total audio processing completed in ${overallDuration}ms - Breakdown: Transcription: ${transcriptionDuration}ms, Intent: ${intentDetectionDuration}ms, AI: ${aiResponseDuration || 'N/A'}ms, TTS: ${ttsDuration}ms`
+      `[${conversationId}] Total audio processing completed in ${overallDuration}ms - Breakdown: Transcription: ${transcriptionDuration}ms, AI: ${aiResponseDuration || 'N/A'}ms, TTS: ${ttsDuration}ms`
     );
 
     return { transcript, aiResponse, audioResponse };
