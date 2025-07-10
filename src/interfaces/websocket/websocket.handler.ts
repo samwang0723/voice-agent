@@ -95,9 +95,10 @@ export class WebSocketHandler {
         if (message.type === 'config') {
           session.sttEngine = message.sttEngine || 'groq';
           session.ttsEngine = message.ttsEngine || 'groq';
+          session.chatMode = message.chatMode || 'single';
           await this.sessionRepository.save(session);
           logger.info(
-            `[${sessionId}] Updated engines - STT: ${session.sttEngine}, TTS: ${session.ttsEngine}`
+            `[${sessionId}] Updated engines - STT: ${session.sttEngine}, TTS: ${session.ttsEngine}, Chat Mode: ${session.chatMode}`
           );
         } else if (message.type === 'audio-context') {
           session.context = message.context;
@@ -155,6 +156,17 @@ export class WebSocketHandler {
         return;
       }
 
+      // Prepare streaming callbacks for real-time message delivery
+      const onTextChunk =
+        session.chatMode === 'stream'
+          ? (chunk: string) => WebSocketGateway.sendAgentStream(ws, chunk)
+          : undefined;
+
+      const onAudioChunk =
+        session.chatMode === 'stream'
+          ? (chunk: Buffer) => WebSocketGateway.sendAudioChunk(ws, chunk)
+          : undefined;
+
       const { transcript, aiResponse, audioResponse } =
         await this.voiceAgentService.processAudio(
           sessionId,
@@ -168,7 +180,10 @@ export class WebSocketHandler {
               bearerToken: session.bearerToken,
               conversationId: session.conversationId,
             },
-          }
+          },
+          session.chatMode,
+          onTextChunk,
+          onAudioChunk
         );
 
       // Send transcript to client
@@ -179,8 +194,9 @@ export class WebSocketHandler {
         });
       }
 
-      // Send AI response and audio to client
-      if (aiResponse) {
+      // Send AI response and audio to client (only for single mode)
+      // In streaming mode, responses are already sent via callbacks
+      if (aiResponse && session.chatMode === 'single') {
         // Check if AI response indicates authentication is required
         const responseText = aiResponse.toLowerCase();
         const authRequiredPatterns = [
@@ -217,6 +233,42 @@ export class WebSocketHandler {
             speechAudio: audioResponse
               ? audioResponse.toString('base64')
               : undefined,
+          });
+        }
+      } else if (aiResponse && session.chatMode === 'stream') {
+        // In streaming mode, check for auth requirements and send final message if needed
+        const responseText = aiResponse.toLowerCase();
+        const authRequiredPatterns = [
+          'sign in to your account',
+          'please authenticate',
+          'authentication required',
+          'login required',
+          'need to sign in',
+          'please sign in',
+          'authentication needed',
+          'access external tools',
+          'sign in first',
+          'authenticate to access',
+        ];
+
+        const requiresAuth = authRequiredPatterns.some((pattern) =>
+          responseText.includes(pattern)
+        );
+
+        if (requiresAuth) {
+          // Send as auth_required type to trigger login prompt
+          logger.info(
+            `[${sessionId}] AI response detected authentication requirement in streaming mode, sending auth_required message`
+          );
+          WebSocketGateway.send(ws, {
+            type: 'auth_required',
+            message: aiResponse,
+          });
+        } else {
+          // Send stream completion signal
+          WebSocketGateway.send(ws, {
+            type: 'agent-stream-complete',
+            message: 'Stream completed',
           });
         }
       }

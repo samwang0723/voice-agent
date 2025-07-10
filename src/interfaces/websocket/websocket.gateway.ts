@@ -13,7 +13,9 @@ export class WebSocketGateway {
     message: WebSocketMessage
   ): void {
     try {
-      ws.send(JSON.stringify({ ...message, timestamp: new Date().toISOString() }));
+      ws.send(
+        JSON.stringify({ ...message, timestamp: new Date().toISOString() })
+      );
     } catch (error) {
       logger.error('Failed to send WebSocket message:', error);
     }
@@ -24,6 +26,23 @@ export class WebSocketGateway {
     errorMessage: string
   ): void {
     this.send(ws, { type: 'error', message: errorMessage });
+  }
+
+  public static sendAgentStream(
+    ws: WSContext<WebSocketData>,
+    delta: string
+  ): void {
+    this.send(ws, { type: 'agent-stream', delta });
+  }
+
+  public static sendAudioChunk(
+    ws: WSContext<WebSocketData>,
+    audioData: Buffer
+  ): void {
+    this.send(ws, {
+      type: 'audio-chunk',
+      data: audioData.toString('base64'),
+    });
   }
 
   public static broadcast(
@@ -42,4 +61,4 @@ export class WebSocketGateway {
       }
     }
   }
-} 
+}

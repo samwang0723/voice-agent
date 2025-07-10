@@ -60,6 +60,15 @@ const disconnectBtn = document.getElementById('disconnectBtn');
 const connectBtn = document.getElementById('connectBtn');
 const messagesEl = document.getElementById('messages');
 const messagesContainer = document.querySelector('.messages-container');
+const chatModeSelect = document.getElementById('chat-mode-select');
+
+// Streaming support variables
+let activeStreamMsg = {
+  text: '',
+  domEl: null,
+};
+let streamAudioQueue = [];
+let isPlayingStream = false;
 
 // Function to get client timezone using browser API
 function getClientTimezone() {
@@ -543,6 +552,10 @@ function stopCurrentAudio() {
     // Clear TTS playing flag when stopping audio
     isTTSPlaying = false;
 
+    // Clear streaming audio queue and reset streaming flag
+    streamAudioQueue = [];
+    isPlayingStream = false;
+
     // Optionally suspend audio context for complete silence
     if (audioContext && audioContext.state === 'running') {
       audioContext
@@ -689,14 +702,19 @@ function connectWebSocket() {
     // Send configuration to the server
     const sttEngine = document.getElementById('stt-engine-select').value;
     const ttsEngine = document.getElementById('tts-engine-select').value;
+    const chatMode = chatModeSelect ? chatModeSelect.value : 'single';
     ws.send(
       JSON.stringify({
         type: 'config',
         sttEngine,
         ttsEngine,
+        chatMode,
       })
     );
-    addMessage(`Using STT: ${sttEngine}, TTS: ${ttsEngine}`, 'system');
+    addMessage(
+      `Using STT: ${sttEngine}, TTS: ${ttsEngine}, Mode: ${chatMode}`,
+      'system'
+    );
 
     updateStatus(true);
     isUserDisconnected = false; // Reset flag when successfully connected
@@ -747,6 +765,15 @@ function connectWebSocket() {
           break;
         case 'barge-in-ack':
           addMessage(`Barge-in acknowledged`, 'system');
+          break;
+        case 'agent-stream':
+          handleAgentStream(data.delta);
+          break;
+        case 'audio-chunk':
+          handleAudioChunk(data.data);
+          break;
+        case 'agent-stream-complete':
+          completeAgentStream();
           break;
         default:
           addMessage(`${event.data}`);
@@ -1177,16 +1204,18 @@ function setupEventListeners() {
     if (ws && ws.readyState === WebSocket.OPEN) {
       const sttEngine = sttEngineSelect.value;
       const ttsEngine = ttsEngineSelect.value;
+      const chatMode = chatModeSelect ? chatModeSelect.value : 'single';
       ws.send(
         JSON.stringify({
           type: 'config',
           sttEngine,
           ttsEngine,
+          chatMode,
           noiseReduction: isNoiseReductionEnabled,
         })
       );
       addMessage(
-        `Configuration updated - STT: ${sttEngine}, TTS: ${ttsEngine}, Noise Reduction: '${
+        `Configuration updated - STT: ${sttEngine}, TTS: ${ttsEngine}, Mode: ${chatMode}, Noise Reduction: '${
           isNoiseReductionEnabled ? 'ON' : 'OFF'
         }'`,
         'system'
@@ -1196,6 +1225,11 @@ function setupEventListeners() {
 
   sttEngineSelect.addEventListener('change', sendConfig);
   ttsEngineSelect.addEventListener('change', sendConfig);
+
+  // Add event listener for chat mode selector
+  if (chatModeSelect) {
+    chatModeSelect.addEventListener('change', sendConfig);
+  }
 }
 
 // Initialize everything when DOM is loaded
@@ -1456,5 +1490,199 @@ function cleanupRNNoise() {
     console.log('RNNoise resources cleaned up');
   } catch (error) {
     console.error('Error cleaning up RNNoise:', error);
+  }
+}
+
+// Streaming Text Functions
+
+// Handle incoming agent stream chunks
+function handleAgentStream(delta) {
+  try {
+    if (!activeStreamMsg.domEl) {
+      // First chunk - create a new streaming message
+      activeStreamMsg.text = delta;
+      activeStreamMsg.domEl = createStreamingMessage(delta);
+      messagesEl.appendChild(activeStreamMsg.domEl);
+    } else {
+      // Subsequent chunks - update existing message
+      activeStreamMsg.text += delta;
+      const contentSpan = activeStreamMsg.domEl.querySelector('.content');
+      if (contentSpan) {
+        contentSpan.textContent = activeStreamMsg.text;
+      }
+    }
+
+    // Auto-scroll to bottom to show the latest content
+    if (messagesContainer) {
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+  } catch (error) {
+    console.error('Error handling agent stream:', error);
+  }
+}
+
+// Create a streaming message DOM element
+function createStreamingMessage(initialText) {
+  const messageEl = document.createElement('div');
+  messageEl.className = 'message agent';
+
+  messageEl.innerHTML = `
+    <span class="content">${initialText}</span>
+    <span class="timestamp">${new Date().toLocaleTimeString()}</span>
+  `;
+
+  return messageEl;
+}
+
+// Complete the agent stream and reset state
+function completeAgentStream() {
+  try {
+    if (activeStreamMsg.domEl) {
+      console.log('🎯 Agent stream completed');
+
+      // Reset streaming state
+      activeStreamMsg = {
+        text: '',
+        domEl: null,
+      };
+    }
+  } catch (error) {
+    console.error('Error completing agent stream:', error);
+  }
+}
+
+// Streaming Audio Functions
+
+// Handle incoming audio chunks
+function handleAudioChunk(base64Data) {
+  try {
+    // Add chunk to queue
+    streamAudioQueue.push(base64Data);
+
+    // Start playback if not already playing
+    if (!isPlayingStream) {
+      playNextStreamChunk();
+    }
+  } catch (error) {
+    console.error('Error handling audio chunk:', error);
+  }
+}
+
+// Play next audio chunk from the queue
+async function playNextStreamChunk() {
+  // Defensive validation - prevent audio playback when disconnected
+  if (!isConnected || isUserDisconnected) {
+    console.log(
+      '🎵 Skipping stream audio playback - application is disconnected'
+    );
+    streamAudioQueue = [];
+    isPlayingStream = false;
+    return;
+  }
+
+  if (!audioContext) {
+    console.error('AudioContext not available for streaming.');
+    return;
+  }
+
+  // Resume context if it's suspended
+  if (audioContext.state === 'suspended') {
+    try {
+      await audioContext.resume();
+      console.log('AudioContext resumed for streaming playback.');
+    } catch (e) {
+      console.error('🎵 Failed to resume AudioContext for streaming:', e);
+      return;
+    }
+  }
+
+  try {
+    isPlayingStream = true;
+    isTTSPlaying = true; // Set for barge-in compatibility
+
+    // Find the most recent agent message to add visual indicator
+    const agentMessages = document.querySelectorAll('.message.agent');
+    const lastAgentMessage = agentMessages[agentMessages.length - 1];
+
+    if (lastAgentMessage) {
+      lastAgentMessage.classList.add('speaking');
+    }
+
+    while (streamAudioQueue.length > 0) {
+      const base64AudioData = streamAudioQueue.shift();
+
+      try {
+        // Convert base64 to ArrayBuffer
+        const binaryString = atob(base64AudioData);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+          bytes[i] = binaryString.charCodeAt(i);
+        }
+
+        // Convert raw PCM data to Float32Array for Web Audio API
+        // Azure Speech SDK outputs 16-bit PCM at 16kHz
+        const pcmData = new Int16Array(bytes.buffer);
+        const floatData = new Float32Array(pcmData.length);
+
+        // Convert 16-bit PCM to Float32 (-1.0 to 1.0 range)
+        for (let i = 0; i < pcmData.length; i++) {
+          floatData[i] = pcmData[i] / 32768.0; // Normalize to -1.0 to 1.0
+        }
+
+        // Create AudioBuffer for the PCM data (16kHz, mono)
+        const audioBuffer = audioContext.createBuffer(
+          1,
+          floatData.length,
+          16000
+        );
+        audioBuffer.copyToChannel(floatData, 0);
+
+        // Create and play audio source
+        const audioSource = audioContext.createBufferSource();
+        audioSource.buffer = audioBuffer;
+        audioSource.connect(audioContext.destination);
+
+        console.log(
+          `🎵 Playing audio chunk: ${floatData.length} samples at 16kHz`
+        );
+
+        // Play the chunk and wait for it to finish
+        await new Promise((resolve) => {
+          audioSource.onended = () => {
+            resolve();
+          };
+          audioSource.start();
+        });
+
+        // Check if we should stop (barge-in or disconnect)
+        if (!isConnected || isUserDisconnected) {
+          console.log('🎵 Stopping audio playback due to disconnect/barge-in');
+          break;
+        }
+      } catch (chunkError) {
+        console.error('🎵 Failed to play audio chunk:', chunkError);
+        // Continue with next chunk instead of stopping entirely
+        continue;
+      }
+    }
+
+    // Clean up when done
+    isPlayingStream = false;
+    isTTSPlaying = false;
+
+    // Remove speaking indicator from the last message
+    if (lastAgentMessage) {
+      lastAgentMessage.classList.remove('speaking');
+    }
+
+    console.log('🎵 Stream audio playback completed');
+  } catch (error) {
+    console.error('🎵 Failed to play stream audio:', error);
+    isPlayingStream = false;
+    isTTSPlaying = false;
+
+    // Remove speaking indicators on error
+    const agentMessages = document.querySelectorAll('.message.agent.speaking');
+    agentMessages.forEach((msg) => msg.classList.remove('speaking'));
   }
 }

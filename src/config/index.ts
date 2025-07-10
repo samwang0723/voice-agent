@@ -107,13 +107,8 @@ export interface AgentSwarmConfig {
 }
 
 export const agentSwarmConfig: AgentSwarmConfig = {
-  baseURL: process.env.AGENT_SWARM_API_URL || 'http://localhost:8900/api/v1',
+  baseURL: process.env.AGENT_SWARM_API_URL || 'http://localhost:3030/api/v1',
   streamTimeout: parseInt(process.env.AGENT_SWARM_STREAM_TIMEOUT || '30000'),
   maxRetries: parseInt(process.env.AGENT_SWARM_MAX_RETRIES || '3'),
   retryDelay: parseInt(process.env.AGENT_SWARM_RETRY_DELAY || '1000'),
-};
-
-// Lazy validation helper function for agent-swarm configuration
-export const isAgentSwarmConfigured = (): boolean => {
-  return !!agentSwarmConfig.baseURL;
 };

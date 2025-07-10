@@ -11,13 +11,15 @@ import {
   DeepgramTextToSpeechService,
 } from '../../infrastructure/ai/deepgram.service';
 import { ElevenLabsTextToSpeechService } from '../../infrastructure/ai/elevenlabs.service';
-import { 
+import {
   AzureTranscriptionService,
-  AzureTextToSpeechService 
+  AzureTextToSpeechService,
 } from '../../infrastructure/ai/azure.service';
+import { AzureStreamingTextToSpeechService } from '../../infrastructure/ai/azureStreaming.service';
 import type {
   ITranscriptionService,
   ITextToSpeechService,
+  IStreamingTextToSpeechService,
 } from './audio.service';
 import logger from '../../infrastructure/logger';
 
@@ -34,6 +36,10 @@ const ttsServices: Record<string, ITextToSpeechService> = {
   deepgram: new DeepgramTextToSpeechService(),
   elevenlabs: new ElevenLabsTextToSpeechService(),
   azure: new AzureTextToSpeechService(),
+};
+
+const streamingTtsServices: Record<string, IStreamingTextToSpeechService> = {
+  'azure-stream': new AzureStreamingTextToSpeechService(),
 };
 
 export function getTranscriptionService(
@@ -56,6 +62,19 @@ export function getTextToSpeechService(provider: string): ITextToSpeechService {
       `TTS provider '${provider}' not found. Defaulting to 'elevenlabs'.`
     );
     return ttsServices.elevenlabs as ITextToSpeechService;
+  }
+  return service;
+}
+
+export function getStreamingTTSService(
+  provider: string
+): IStreamingTextToSpeechService | undefined {
+  const service = streamingTtsServices[provider];
+  if (!service) {
+    logger.debug(
+      `Streaming TTS provider '${provider}' not found or not available.`
+    );
+    return undefined;
   }
   return service;
 }

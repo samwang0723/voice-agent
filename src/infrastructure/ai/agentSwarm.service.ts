@@ -249,6 +249,8 @@ export class AgentSwarmService {
             for (const message of messages) {
               if (!message.trim()) continue;
 
+              logger.debug(`Streaming message: "${message}"`);
+
               const lines = message.split('\n');
               let data = '';
               let eventType = '';
@@ -279,10 +281,8 @@ export class AgentSwarmService {
                 try {
                   // Try to parse as JSON first
                   const parsed = JSON.parse(data);
-                  if (parsed.content) {
-                    yield parsed.content;
-                  } else if (parsed.response) {
-                    yield parsed.response;
+                  if (parsed.text) {
+                    yield parsed.text;
                   } else if (typeof parsed === 'string') {
                     yield parsed;
                   }

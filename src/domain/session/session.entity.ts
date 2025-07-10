@@ -5,6 +5,7 @@ export class Session {
   public context: any = {};
   public sttEngine: string = 'groq';
   public ttsEngine: string = 'elevenlabs';
+  public chatMode: 'single' | 'stream' = 'single';
   public bearerToken?: string;
   public swarmInitialized: boolean = false;
 
