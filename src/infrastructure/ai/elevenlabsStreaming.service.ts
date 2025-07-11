@@ -9,6 +9,7 @@ export class ElevenLabsStreamingTextToSpeechService
 {
   private elevenLabsClient: ElevenLabsClient | null = null;
   private chunkBuffer: Buffer = Buffer.alloc(0);
+  private carryoverBuffer: Buffer = Buffer.alloc(0); // For handling odd-length chunks
 
   // Chunk buffering constants for consistent audio output
   private static readonly OUTPUT_CHUNK_SIZE = 16000; // 16KB chunks for ~80ms at 16kHz mono PCM
@@ -53,8 +54,9 @@ export class ElevenLabsStreamingTextToSpeechService
         return;
       }
 
-      // Reset chunk buffer for new synthesis session
+      // Reset buffers for new synthesis session
       this.chunkBuffer = Buffer.alloc(0);
+      this.carryoverBuffer = Buffer.alloc(0);
 
       // Accumulate text chunks for synthesis
       let accumulatedText = '';
@@ -102,8 +104,9 @@ export class ElevenLabsStreamingTextToSpeechService
         yield* this.flushRemainingBuffer();
       }
 
-      // Clean up chunk buffer
+      // Clean up buffers
       this.chunkBuffer = Buffer.alloc(0);
+      this.carryoverBuffer = Buffer.alloc(0);
     } catch (error) {
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
@@ -202,7 +205,7 @@ export class ElevenLabsStreamingTextToSpeechService
           return;
         }
 
-        const buffer = Buffer.from(chunk);
+        let buffer = Buffer.from(chunk);
         logger.debug(
           `ElevenLabs Streaming TTS received PCM audio chunk: ${buffer.length} bytes`
         );
@@ -215,18 +218,44 @@ export class ElevenLabsStreamingTextToSpeechService
           continue;
         }
 
+        // Handle carryover from previous chunk if any
+        if (this.carryoverBuffer.length > 0) {
+          buffer = Buffer.concat([this.carryoverBuffer, buffer]);
+          this.carryoverBuffer = Buffer.alloc(0);
+          logger.debug(
+            `ElevenLabs Streaming TTS merged carryover byte, new buffer size: ${buffer.length} bytes`
+          );
+        }
+
+        // Check alignment and handle odd-length chunks
         if (
           buffer.length %
             ElevenLabsStreamingTextToSpeechService.SAMPLE_WIDTH !==
           0
         ) {
-          logger.warn(
-            `ElevenLabs Streaming TTS received odd-length chunk: ${buffer.length} bytes, may cause alignment issues`
+          logger.debug(
+            `ElevenLabs Streaming TTS handling odd-length chunk: ${buffer.length} bytes`
+          );
+
+          // Carry over the last byte to maintain alignment
+          this.carryoverBuffer = buffer.subarray(buffer.length - 1);
+          buffer = buffer.subarray(0, buffer.length - 1);
+
+          logger.debug(
+            `ElevenLabs Streaming TTS aligned chunk to ${buffer.length} bytes, carrying over 1 byte`
           );
         }
 
         // Process chunk through buffering logic
         yield* this.processAudioChunk(buffer);
+      }
+
+      // After all chunks are processed, handle any remaining carryover
+      if (this.carryoverBuffer.length > 0) {
+        logger.warn(
+          `ElevenLabs Streaming TTS discarding ${this.carryoverBuffer.length} byte carryover at end of stream`
+        );
+        this.carryoverBuffer = Buffer.alloc(0);
       }
 
       logger.debug(
