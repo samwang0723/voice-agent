@@ -184,16 +184,41 @@ export class AgentSwarmService {
   async *chatStream(
     message: string,
     token: string,
-    context?: ClientContext
+    context?: ClientContext,
+    externalAbort?: AbortSignal
   ): AsyncGenerator<string> {
     let lastEventId: string | null = null;
     let attempt = 1;
 
     while (attempt <= this.maxRetries) {
       let streamStarted = false;
+      let timeoutId: NodeJS.Timeout | null = null;
 
       try {
         logger.info(`Starting agent-swarm chat stream (attempt ${attempt})`);
+
+        // Create local AbortController for timeout management
+        const controller = new AbortController();
+
+        // Set up external cancellation support
+        if (externalAbort) {
+          if (externalAbort.aborted) {
+            logger.info(
+              'External abort signal already triggered, cancelling stream'
+            );
+            return;
+          }
+          externalAbort.addEventListener('abort', () => {
+            logger.info('External abort signal received, cancelling stream');
+            controller.abort();
+          });
+        }
+
+        // Set up timeout
+        timeoutId = setTimeout(() => {
+          logger.warn(`Stream timeout after ${this.streamTimeout}ms, aborting`);
+          controller.abort();
+        }, this.streamTimeout);
 
         const headers = this.getHeaders(
           token,
@@ -211,6 +236,7 @@ export class AgentSwarmService {
           method: 'POST',
           headers,
           body: JSON.stringify({ message }),
+          signal: controller.signal,
         });
 
         if (!response.ok) {
@@ -226,16 +252,14 @@ export class AgentSwarmService {
         let buffer = '';
 
         try {
-          const timeoutId = setTimeout(() => {
-            reader.cancel();
-            throw new Error('Stream timeout');
-          }, this.streamTimeout);
-
           while (true) {
             const { done, value } = await reader.read();
 
             if (done) {
-              clearTimeout(timeoutId);
+              if (timeoutId) {
+                clearTimeout(timeoutId);
+                timeoutId = null;
+              }
               break;
             }
 
@@ -273,7 +297,10 @@ export class AgentSwarmService {
               }
 
               if (data === '[DONE]') {
-                clearTimeout(timeoutId);
+                if (timeoutId) {
+                  clearTimeout(timeoutId);
+                  timeoutId = null;
+                }
                 return;
               }
 
@@ -294,16 +321,42 @@ export class AgentSwarmService {
             }
           }
 
-          clearTimeout(timeoutId);
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+            timeoutId = null;
+          }
           return; // Successful completion
         } finally {
           reader.releaseLock();
         }
       } catch (error) {
+        // Clean up timeout on error
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+
+        const err = error as Error;
+
+        // Handle AbortError specifically
+        if (err.name === 'AbortError') {
+          if (externalAbort?.aborted) {
+            logger.info('Stream cancelled by external abort signal');
+          } else {
+            logger.info('Stream cancelled due to timeout');
+          }
+          return; // Gracefully exit without throwing
+        }
+
         logger.error(
           `Agent-swarm chat stream attempt ${attempt} failed:`,
           error
         );
+
+        // Don't retry operations that were deliberately aborted
+        if (err.name === 'AbortError') {
+          return;
+        }
 
         if (attempt >= this.maxRetries) {
           throw error;

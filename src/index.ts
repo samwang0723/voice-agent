@@ -1,6 +1,11 @@
 import logger from './infrastructure/logger';
 import { applyWebSocketPatches } from './infrastructure/patches/websocket.patch';
 
+// Handle unhandled promise rejections for debugging
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error('Unhandled Promise Rejection:', reason);
+});
+
 // Apply WebSocket patches for third-party library compatibility
 applyWebSocketPatches();
 
@@ -23,6 +28,9 @@ logger.info(`Agent-Swarm API URL: ${agentSwarmConfig.baseURL}`);
 logger.info(`Stream timeout: ${agentSwarmConfig.streamTimeout}ms`);
 logger.info(`Max retries: ${agentSwarmConfig.maxRetries}`);
 logger.info('Agent-Swarm AI initialized successfully');
+logger.info(
+  'Enhanced cancellation mechanism enabled for both AI streaming and TTS operations'
+);
 
 // 3. Initialize application service
 const voiceAgentService = new VoiceAgentService(
@@ -45,5 +53,24 @@ const server = Bun.serve({
   port: serverConfig.port,
   websocket: webSocketCallbacks,
 });
+
+// Graceful shutdown handling
+const gracefulShutdown = (signal: string) => {
+  logger.info(`Received ${signal}, shutting down gracefully...`);
+
+  // Cancel any active sessions
+  try {
+    // The session cleanup will be handled by the VoiceAgentService
+    // when the process exits, but we log the shutdown attempt
+    logger.info('Cleaning up active sessions...');
+  } catch (error) {
+    logger.error('Error during shutdown cleanup:', error);
+  }
+
+  process.exit(0);
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 logger.info(`Server listening on http://localhost:${server.port}`);

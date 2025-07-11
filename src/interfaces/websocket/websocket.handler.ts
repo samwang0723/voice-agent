@@ -109,7 +109,7 @@ export class WebSocketHandler {
           );
         } else if (message.type === 'barge-in') {
           try {
-            await this.voiceAgentService.cancelCurrentTTS(session.id);
+            await this.voiceAgentService.cancelCurrentSession(session.id);
             logger.info(`[${sessionId}] Barge-in processed successfully`);
 
             // Send acknowledgment response

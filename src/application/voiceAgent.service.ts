@@ -20,7 +20,10 @@ const streamProviderMap: Record<string, string> = {
 };
 
 export class VoiceAgentService {
-  private activeTTSControllers: Map<string, AbortController> = new Map();
+  private activeSessionControllers: Map<
+    string,
+    { ttsCtrl: AbortController; aiCtrl: AbortController }
+  > = new Map();
 
   constructor(
     private readonly conversationRepository: IConversationRepository,
@@ -29,6 +32,35 @@ export class VoiceAgentService {
     logger.info(
       'VoiceAgentService initialized with dual-AI runtime (local + agent-swarm)'
     );
+  }
+
+  private startNewSessionControllers(sessionId: string): {
+    ttsCtrl: AbortController;
+    aiCtrl: AbortController;
+  } {
+    // Check if existing controllers exist and abort them
+    const existingControllers = this.activeSessionControllers.get(sessionId);
+    if (existingControllers) {
+      logger.info(
+        `Aborting existing TTS and AI operations for session ${sessionId}`
+      );
+      existingControllers.ttsCtrl.abort();
+      existingControllers.aiCtrl.abort();
+    }
+
+    // Create new controllers and store them
+    const ttsCtrl = new AbortController();
+    const aiCtrl = new AbortController();
+    const controllers = { ttsCtrl, aiCtrl };
+    this.activeSessionControllers.set(sessionId, controllers);
+    logger.debug(`Created new session controllers for session ${sessionId}`);
+
+    return controllers;
+  }
+
+  private cleanupSessionControllers(sessionId: string): void {
+    this.activeSessionControllers.delete(sessionId);
+    logger.debug(`Cleaned up session controllers for session ${sessionId}`);
   }
 
   public async processAudio(
@@ -47,6 +79,10 @@ export class VoiceAgentService {
     audioResponse: Buffer | null;
   }> {
     const sessionId = context?.session?.id || conversationId;
+
+    // Cancel any existing operations for this session immediately
+    await this.cancelCurrentSession(sessionId);
+
     const overallStartTime = Date.now();
     logger.info(
       `[${conversationId}] Starting audio processing with STT: ${sttEngine}, TTS: ${ttsEngine}`
@@ -139,9 +175,9 @@ export class VoiceAgentService {
 
           const chunks: string[] = [];
 
-          // Create AbortController for streaming operations
-          const abortController = new AbortController();
-          this.activeTTSControllers.set(sessionId, abortController);
+          // Create AbortControllers for streaming operations
+          const { ttsCtrl, aiCtrl } =
+            this.startNewSessionControllers(sessionId);
 
           try {
             // Get streaming TTS service if available
@@ -158,7 +194,8 @@ export class VoiceAgentService {
                 for await (const chunk of this.agentSwarmService.chatStream(
                   transcript,
                   context.session.bearerToken,
-                  enhancedContext
+                  enhancedContext,
+                  aiCtrl.signal
                 )) {
                   logger.debug(
                     `[${conversationId}] Streaming text chunk: "${chunk}"`
@@ -176,7 +213,7 @@ export class VoiceAgentService {
                 try {
                   for await (const audioChunk of streamingTtsService.synthesizeStream(
                     textChunkGenerator(),
-                    abortController.signal
+                    ttsCtrl.signal
                   )) {
                     onAudioChunk(audioChunk);
                   }
@@ -198,7 +235,8 @@ export class VoiceAgentService {
               for await (const chunk of this.agentSwarmService.chatStream(
                 transcript,
                 context.session.bearerToken,
-                enhancedContext
+                enhancedContext,
+                aiCtrl.signal
               )) {
                 chunks.push(chunk);
                 if (onTextChunk) {
@@ -223,7 +261,7 @@ export class VoiceAgentService {
             }
             aiResponse = chunks.join('');
           } finally {
-            this.activeTTSControllers.delete(sessionId);
+            this.cleanupSessionControllers(sessionId);
           }
         } else {
           // Single mode - use regular chat
@@ -276,15 +314,11 @@ export class VoiceAgentService {
       const ttsStartTime = Date.now();
       const ttsService = getTextToSpeechService(ttsEngine);
 
-      // Create AbortController for TTS cancellation
-      const abortController = new AbortController();
-      this.activeTTSControllers.set(sessionId, abortController);
+      // Create AbortControllers for TTS cancellation
+      const { ttsCtrl } = this.startNewSessionControllers(sessionId);
 
       try {
-        audioResponse = await ttsService.synthesize(
-          aiResponse,
-          abortController.signal
-        );
+        audioResponse = await ttsService.synthesize(aiResponse, ttsCtrl.signal);
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
           logger.info(
@@ -294,8 +328,8 @@ export class VoiceAgentService {
           logger.error(`[${conversationId}] TTS synthesis failed:`, error);
         }
       } finally {
-        // Clean up the controller from the map
-        this.activeTTSControllers.delete(sessionId);
+        // Clean up the controllers from the map
+        this.cleanupSessionControllers(sessionId);
       }
 
       ttsDuration = Date.now() - ttsStartTime;
@@ -330,14 +364,17 @@ export class VoiceAgentService {
     return { transcript, aiResponse, audioResponse };
   }
 
-  public async cancelCurrentTTS(sessionId: string): Promise<void> {
-    const controller = this.activeTTSControllers.get(sessionId);
-    if (controller) {
-      logger.info(`Cancelling active TTS operation for session ${sessionId}`);
-      controller.abort();
-      this.activeTTSControllers.delete(sessionId);
+  public async cancelCurrentSession(sessionId: string): Promise<void> {
+    const controllers = this.activeSessionControllers.get(sessionId);
+    if (controllers) {
+      logger.info(
+        `Cancelling active TTS and AI operations for session ${sessionId}`
+      );
+      controllers.ttsCtrl.abort();
+      controllers.aiCtrl.abort();
+      this.activeSessionControllers.delete(sessionId);
     } else {
-      logger.debug(`No active TTS operation found for session ${sessionId}`);
+      logger.debug(`No active operations found for session ${sessionId}`);
     }
   }
 }
