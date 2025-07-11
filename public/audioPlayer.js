@@ -281,6 +281,112 @@ class AudioPlayer {
   }
 
   /**
+   * Play base64-encoded MP3 audio data for single-shot TTS playback
+   * @param {string} base64AudioData - Base64 encoded MP3 audio data
+   */
+  async playBase64Audio(base64AudioData) {
+    // Input validation
+    if (!base64AudioData || typeof base64AudioData !== 'string') {
+      console.warn('AudioPlayer: Invalid base64 audio data provided');
+      return;
+    }
+
+    try {
+      // Audio context preparation
+      await this.ensureAudioContextReady();
+
+      // Barge-in support - stop existing playback
+      if (this.isPlaying()) {
+        console.log('AudioPlayer: Stopping existing playback for barge-in');
+        this.stop();
+      }
+
+      // Audio decoding - convert base64 to ArrayBuffer
+      const binaryString = atob(base64AudioData);
+      const uint8Array = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        uint8Array[i] = binaryString.charCodeAt(i);
+      }
+
+      // Decode MP3 audio data
+      const audioBuffer = await this.audioContext.decodeAudioData(
+        uint8Array.buffer
+      );
+
+      // Playback setup
+      const source = this.audioContext.createBufferSource();
+      const gainNode = this.audioContext.createGain();
+
+      source.buffer = audioBuffer;
+      source.connect(gainNode);
+      gainNode.connect(this.audioContext.destination);
+
+      // Apply crossfade effects (reuse logic from scheduleAudioBuffer)
+      const currentTime = this.audioContext.currentTime;
+      const startTime = currentTime;
+      const fadeInEnd = startTime + this.crossfadeDuration;
+      const fadeOutStart =
+        startTime + audioBuffer.duration - this.crossfadeDuration;
+
+      gainNode.gain.setValueAtTime(0, startTime);
+      gainNode.gain.linearRampToValueAtTime(1, fadeInEnd);
+
+      if (audioBuffer.duration > this.crossfadeDuration * 2) {
+        gainNode.gain.setValueAtTime(1, fadeOutStart);
+        gainNode.gain.linearRampToValueAtTime(
+          0,
+          startTime + audioBuffer.duration
+        );
+      }
+
+      // State management
+      this.currentlyPlaying = true;
+      this.scheduledSources.add(source);
+
+      // Trigger onStart callback
+      if (this.onStart) {
+        this.onStart();
+      }
+
+      // Handle onended event for cleanup
+      source.onended = () => {
+        this.scheduledSources.delete(source);
+        source.disconnect();
+        gainNode.disconnect();
+
+        // Check if this was the last scheduled source
+        if (this.scheduledSources.size === 0 && this.audioQueue.length === 0) {
+          this.currentlyPlaying = false;
+          if (this.onFinish) {
+            this.onFinish();
+          }
+        }
+      };
+
+      // Start playback
+      source.start(startTime);
+
+      console.log('AudioPlayer: Started MP3 playback', {
+        duration: audioBuffer.duration,
+        sampleRate: audioBuffer.sampleRate,
+        numberOfChannels: audioBuffer.numberOfChannels,
+      });
+    } catch (error) {
+      console.error('AudioPlayer: Failed to play base64 audio:', error);
+
+      // Clean up state on error
+      this.currentlyPlaying = false;
+
+      // Trigger cancel callback if needed
+      if (this.onCancel) {
+        this.onCancel();
+      }
+
+      throw error;
+    }
+  }
+
+  /**
    * Stop all audio playback and cancel scheduled chunks
    */
   stop() {

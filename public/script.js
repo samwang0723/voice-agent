@@ -627,7 +627,24 @@ function connectWebSocket() {
               );
               break;
             }
-            audioPlayer.enqueue(data.speechAudio);
+
+            try {
+              // Mode detection - get current chat mode with fallback to 'single'
+              const chatMode = chatModeSelect?.value || 'single';
+
+              // Conditional routing based on chat mode
+              if (chatMode === 'stream') {
+                // Stream mode: handle raw PCM chunks (existing functionality)
+                audioPlayer.enqueue(data.speechAudio);
+              } else {
+                // Single mode and others: handle MP3 decoding
+                audioPlayer.playBase64Audio(data.speechAudio);
+              }
+            } catch (error) {
+              console.error('Error routing audio data:', error);
+              // Fallback to original method on error
+              audioPlayer.enqueue(data.speechAudio);
+            }
           }
           break;
         case 'auth_required':
