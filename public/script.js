@@ -1,4 +1,5 @@
 import createRNNWasmModule from './rnnoise.js';
+import AudioPlayer from './audioPlayer.js';
 
 // OAuth Configuration
 const AGENT_SWARM_API = 'https://50c21f73c5ca.ngrok-free.app/api/v1';
@@ -16,9 +17,10 @@ let isListening = false;
 let isConnected = false;
 let isUserDisconnected = false; // Track if user manually disconnected
 let isVadReady = false; // Track if VAD is initialized and ready
-let audioContext = null;
-let currentAudioSource = null; // Use for Web Audio API source node
 let isOAuthInProgress = false; // Prevent multiple OAuth flows
+
+// Initialize AudioPlayer instance
+const audioPlayer = new AudioPlayer();
 
 // RNNoise global variables
 let rnnoiseModule = null;
@@ -39,9 +41,6 @@ const DEFAULT_VAD_TUNING = {
 
 // RMS Energy Gate Threshold (approximately -40 dBFS)
 const RMS_ENERGY_THRESHOLD = 0.01;
-
-// TTS playing state flag for barge-in functionality
-let isTTSPlaying = false;
 
 // VAD Debugging Counters for observability
 const vadDebugCounters = {
@@ -67,8 +66,6 @@ let activeStreamMsg = {
   text: '',
   domEl: null,
 };
-let streamAudioQueue = [];
-let isPlayingStream = false;
 
 // Function to get client timezone using browser API
 function getClientTimezone() {
@@ -534,127 +531,11 @@ function updateStatus(connected) {
 // Stop current TTS audio playback and cleanup visual indicators
 function stopCurrentAudio() {
   try {
-    // Stop any currently playing audio source
-    if (currentAudioSource) {
-      console.log('🎵 Stopping current TTS audio playback');
-      currentAudioSource.stop();
-      currentAudioSource = null;
-    }
-
-    // Remove speaking visual indicators from all agent messages
-    const speakingMessages = document.querySelectorAll(
-      '.message.agent.speaking'
-    );
-    speakingMessages.forEach((msg) => {
-      msg.classList.remove('speaking');
-    });
-
-    // Clear TTS playing flag when stopping audio
-    isTTSPlaying = false;
-
-    // Clear streaming audio queue and reset streaming flag
-    streamAudioQueue = [];
-    isPlayingStream = false;
-
-    // Optionally suspend audio context for complete silence
-    if (audioContext && audioContext.state === 'running') {
-      audioContext
-        .suspend()
-        .then(() => {
-          console.log('🎵 AudioContext suspended for disconnect');
-        })
-        .catch((error) => {
-          console.warn('Failed to suspend AudioContext:', error);
-        });
-    }
-
+    console.log('🎵 Stopping current audio playback');
+    audioPlayer.stop();
     console.log('🎵 Current audio stopped and cleaned up');
   } catch (error) {
     console.error('Error stopping current audio:', error);
-  }
-}
-
-// Play TTS audio from base64 data using Web Audio API
-async function playTTSAudio(base64AudioData) {
-  // Defensive validation - prevent audio playback when disconnected
-  if (!isConnected || isUserDisconnected) {
-    console.log('🎵 Skipping TTS audio playback - application is disconnected');
-    return;
-  }
-
-  if (!audioContext) {
-    console.error('AudioContext not available.');
-    addMessage('Cannot play audio: AudioContext not initialized.', 'error');
-    return;
-  }
-
-  // Resume context if it's suspended (e.g., after long inactivity, on first play, or after disconnect)
-  if (audioContext.state === 'suspended') {
-    try {
-      await audioContext.resume();
-      console.log('AudioContext resumed for playback.');
-    } catch (e) {
-      console.error('🎵 Failed to resume AudioContext:', e);
-      addMessage(
-        'Could not start audio. Please click the page to enable.',
-        'error'
-      );
-      return;
-    }
-  }
-
-  try {
-    if (currentAudioSource) {
-      currentAudioSource.stop();
-      currentAudioSource = null;
-    }
-
-    // Find the most recent agent message to add visual indicator
-    const agentMessages = document.querySelectorAll('.message.agent');
-    const lastAgentMessage = agentMessages[agentMessages.length - 1];
-
-    // Convert base64 to ArrayBuffer
-    const binaryString = atob(base64AudioData);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
-
-    // Decode audio data using Web Audio API
-    const audioBuffer = await audioContext.decodeAudioData(bytes.buffer);
-
-    // Create and play audio source
-    currentAudioSource = audioContext.createBufferSource();
-    currentAudioSource.buffer = audioBuffer;
-    currentAudioSource.connect(audioContext.destination);
-
-    // Add visual indicator when audio starts playing
-    if (lastAgentMessage) {
-      lastAgentMessage.classList.add('speaking');
-    }
-
-    // Set TTS playing flag for barge-in functionality
-    isTTSPlaying = true;
-
-    currentAudioSource.onended = () => {
-      // Remove visual indicator when audio ends
-      if (lastAgentMessage) {
-        lastAgentMessage.classList.remove('speaking');
-      }
-      console.log('🎵 TTS audio playback finished');
-      currentAudioSource = null;
-      // Clear TTS playing flag
-      isTTSPlaying = false;
-    };
-
-    console.log('🎵 Playing TTS audio...');
-    currentAudioSource.start();
-  } catch (error) {
-    console.error('🎵 Failed to play TTS audio:', error);
-    // Ensure visual indicator is removed on error
-    const agentMessages = document.querySelectorAll('.message.agent.speaking');
-    agentMessages.forEach((msg) => msg.classList.remove('speaking'));
-    currentAudioSource = null;
   }
 }
 
@@ -739,7 +620,14 @@ function connectWebSocket() {
 
           // Play TTS audio if available
           if (data.speechAudio) {
-            playTTSAudio(data.speechAudio);
+            // Defensive validation - prevent audio playback when disconnected
+            if (!isConnected || isUserDisconnected) {
+              console.log(
+                '🎵 Skipping TTS audio playback - application is disconnected'
+              );
+              break;
+            }
+            audioPlayer.enqueue(data.speechAudio);
           }
           break;
         case 'auth_required':
@@ -770,7 +658,14 @@ function connectWebSocket() {
           handleAgentStream(data.delta);
           break;
         case 'audio-chunk':
-          handleAudioChunk(data.data);
+          // Defensive validation - prevent audio playback when disconnected
+          if (!isConnected || isUserDisconnected) {
+            console.log(
+              '🎵 Skipping stream audio playback - application is disconnected'
+            );
+            break;
+          }
+          audioPlayer.enqueue(data.data);
           break;
         case 'agent-stream-complete':
           completeAgentStream();
@@ -835,7 +730,9 @@ function calculateRMS(audioBuffer) {
 // Get dynamic RMS threshold based on TTS playing state
 function getDynamicRMSThreshold() {
   // Increase threshold during TTS playback to prevent audio feedback loops
-  return isTTSPlaying ? RMS_ENERGY_THRESHOLD * 3 : RMS_ENERGY_THRESHOLD;
+  return audioPlayer.isPlaying()
+    ? RMS_ENERGY_THRESHOLD * 3
+    : RMS_ENERGY_THRESHOLD;
 }
 
 // Log VAD statistics for monitoring and tuning
@@ -921,7 +818,7 @@ async function initializeVAD() {
             vadDebugCounters.trueStarts++;
 
             // Implement barge-in: stop current TTS audio when user starts speaking
-            if (isTTSPlaying) {
+            if (audioPlayer.isPlaying()) {
               console.log('🎤 User barge-in detected - stopping TTS audio');
               stopCurrentAudio();
 
@@ -1235,7 +1132,7 @@ function setupEventListeners() {
 // Initialize everything when DOM is loaded
 window.addEventListener('DOMContentLoaded', async () => {
   configureONNXRuntime();
-  initializeAudioContext();
+  setupAudioPlayerCallbacks();
   setupEventListeners();
   await bootstrapAuth();
 });
@@ -1264,36 +1161,36 @@ function getCurrentDateTime() {
   };
 }
 
-// Initialize the Web Audio API context
-function initializeAudioContext() {
-  try {
-    audioContext = new (window.AudioContext || window.webkitAudioContext)();
-    if (audioContext.state === 'suspended') {
-      addMessage('🔊 Click anywhere on the page to enable audio', 'system');
-      document.body.addEventListener('click', resumeAudioContext, {
-        once: true,
-      });
-      document.body.addEventListener('touchstart', resumeAudioContext, {
-        once: true,
-      });
+// Setup AudioPlayer event callbacks
+function setupAudioPlayerCallbacks() {
+  // Set up callback to add speaking indicator when audio starts
+  audioPlayer.onStart = () => {
+    const agentMessages = document.querySelectorAll('.message.agent');
+    const lastAgentMessage = agentMessages[agentMessages.length - 1];
+    if (lastAgentMessage) {
+      lastAgentMessage.classList.add('speaking');
     }
-  } catch (e) {
-    console.error('Web Audio API is not supported in this browser.', e);
-    addMessage('Audio playback is not supported by your browser.', 'error');
-  }
-}
+  };
 
-// Resume AudioContext after a user gesture
-function resumeAudioContext() {
-  if (audioContext && audioContext.state === 'suspended') {
-    audioContext
-      .resume()
-      .then(() => {
-        console.log('AudioContext resumed successfully.');
-        addMessage('🔊 Audio enabled', 'system');
-      })
-      .catch((e) => console.error('Failed to resume AudioContext', e));
-  }
+  // Set up callback to remove speaking indicator when audio finishes
+  audioPlayer.onFinish = () => {
+    const speakingMessages = document.querySelectorAll(
+      '.message.agent.speaking'
+    );
+    speakingMessages.forEach((msg) => {
+      msg.classList.remove('speaking');
+    });
+  };
+
+  // Set up callback for barge-in and disconnect scenarios
+  audioPlayer.onCancel = () => {
+    const speakingMessages = document.querySelectorAll(
+      '.message.agent.speaking'
+    );
+    speakingMessages.forEach((msg) => {
+      msg.classList.remove('speaking');
+    });
+  };
 }
 
 // Add timeout mechanism for OAuth flow
@@ -1548,141 +1445,5 @@ function completeAgentStream() {
     }
   } catch (error) {
     console.error('Error completing agent stream:', error);
-  }
-}
-
-// Streaming Audio Functions
-
-// Handle incoming audio chunks
-function handleAudioChunk(base64Data) {
-  try {
-    // Add chunk to queue
-    streamAudioQueue.push(base64Data);
-
-    // Start playback if not already playing
-    if (!isPlayingStream) {
-      playNextStreamChunk();
-    }
-  } catch (error) {
-    console.error('Error handling audio chunk:', error);
-  }
-}
-
-// Play next audio chunk from the queue
-async function playNextStreamChunk() {
-  // Defensive validation - prevent audio playback when disconnected
-  if (!isConnected || isUserDisconnected) {
-    console.log(
-      '🎵 Skipping stream audio playback - application is disconnected'
-    );
-    streamAudioQueue = [];
-    isPlayingStream = false;
-    return;
-  }
-
-  if (!audioContext) {
-    console.error('AudioContext not available for streaming.');
-    return;
-  }
-
-  // Resume context if it's suspended
-  if (audioContext.state === 'suspended') {
-    try {
-      await audioContext.resume();
-      console.log('AudioContext resumed for streaming playback.');
-    } catch (e) {
-      console.error('🎵 Failed to resume AudioContext for streaming:', e);
-      return;
-    }
-  }
-
-  try {
-    isPlayingStream = true;
-    isTTSPlaying = true; // Set for barge-in compatibility
-
-    // Find the most recent agent message to add visual indicator
-    const agentMessages = document.querySelectorAll('.message.agent');
-    const lastAgentMessage = agentMessages[agentMessages.length - 1];
-
-    if (lastAgentMessage) {
-      lastAgentMessage.classList.add('speaking');
-    }
-
-    while (streamAudioQueue.length > 0) {
-      const base64AudioData = streamAudioQueue.shift();
-
-      try {
-        // Convert base64 to ArrayBuffer
-        const binaryString = atob(base64AudioData);
-        const bytes = new Uint8Array(binaryString.length);
-        for (let i = 0; i < binaryString.length; i++) {
-          bytes[i] = binaryString.charCodeAt(i);
-        }
-
-        // Convert raw PCM data to Float32Array for Web Audio API
-        // Azure Speech SDK outputs 16-bit PCM at 16kHz
-        const pcmData = new Int16Array(bytes.buffer);
-        const floatData = new Float32Array(pcmData.length);
-
-        // Convert 16-bit PCM to Float32 (-1.0 to 1.0 range)
-        for (let i = 0; i < pcmData.length; i++) {
-          floatData[i] = pcmData[i] / 32768.0; // Normalize to -1.0 to 1.0
-        }
-
-        // Create AudioBuffer for the PCM data (16kHz, mono)
-        const audioBuffer = audioContext.createBuffer(
-          1,
-          floatData.length,
-          16000
-        );
-        audioBuffer.copyToChannel(floatData, 0);
-
-        // Create and play audio source
-        const audioSource = audioContext.createBufferSource();
-        audioSource.buffer = audioBuffer;
-        audioSource.connect(audioContext.destination);
-
-        console.log(
-          `🎵 Playing audio chunk: ${floatData.length} samples at 16kHz`
-        );
-
-        // Play the chunk and wait for it to finish
-        await new Promise((resolve) => {
-          audioSource.onended = () => {
-            resolve();
-          };
-          audioSource.start();
-        });
-
-        // Check if we should stop (barge-in or disconnect)
-        if (!isConnected || isUserDisconnected) {
-          console.log('🎵 Stopping audio playback due to disconnect/barge-in');
-          break;
-        }
-      } catch (chunkError) {
-        console.error('🎵 Failed to play audio chunk:', chunkError);
-        // Continue with next chunk instead of stopping entirely
-        continue;
-      }
-    }
-
-    // Clean up when done
-    isPlayingStream = false;
-    isTTSPlaying = false;
-
-    // Remove speaking indicator from the last message
-    if (lastAgentMessage) {
-      lastAgentMessage.classList.remove('speaking');
-    }
-
-    console.log('🎵 Stream audio playback completed');
-  } catch (error) {
-    console.error('🎵 Failed to play stream audio:', error);
-    isPlayingStream = false;
-    isTTSPlaying = false;
-
-    // Remove speaking indicators on error
-    const agentMessages = document.querySelectorAll('.message.agent.speaking');
-    agentMessages.forEach((msg) => msg.classList.remove('speaking'));
   }
 }

@@ -216,7 +216,7 @@ export class AzureStreamingTextToSpeechService
         if (audioData && audioData.byteLength > 0) {
           // Split the audio data into chunks for streaming effect
           const buffer = Buffer.from(audioData);
-          const chunkSize = 1024 * 4; // 4KB chunks
+          const chunkSize = 16000; // 16KB chunks (approximately 80ms of 16kHz mono PCM audio)
 
           logger.info(
             `Azure Streaming TTS synthesis completed for text: "${text.substring(0, 50)}..." - ${buffer.length} bytes total`
@@ -236,11 +236,6 @@ export class AzureStreamingTextToSpeechService
               `Azure Streaming TTS received audio chunk: ${chunk.length} bytes`
             );
             yield chunk;
-
-            // Small delay to simulate streaming (optional)
-            if (i + chunkSize < buffer.length) {
-              await new Promise((resolve) => setTimeout(resolve, 5));
-            }
           }
 
           logger.debug(

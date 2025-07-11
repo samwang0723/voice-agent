@@ -33,7 +33,8 @@ export class VoiceAgentService {
     context?: any,
     chatMode: 'single' | 'stream' = 'single',
     onTextChunk?: (chunk: string) => void,
-    onAudioChunk?: (chunk: Buffer) => void
+    onAudioChunk?: (chunk: Buffer) => void,
+    onTranscript?: (transcript: string) => void
   ): Promise<{
     transcript: string;
     aiResponse: string;
@@ -74,6 +75,11 @@ export class VoiceAgentService {
       `[${conversationId}] Transcription (${sttEngine}) took ${transcriptionDuration}ms`
     );
     logger.debug(`[${conversationId}] Transcript: "${transcript}"`);
+
+    // Send transcript immediately after transcription (especially important for streaming mode)
+    if (transcript && !transcript.startsWith('[') && onTranscript) {
+      onTranscript(transcript);
+    }
 
     if (!transcript || transcript.startsWith('[')) {
       const overallDuration = Date.now() - overallStartTime;

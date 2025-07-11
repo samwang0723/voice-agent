@@ -167,6 +167,14 @@ export class WebSocketHandler {
           ? (chunk: Buffer) => WebSocketGateway.sendAudioChunk(ws, chunk)
           : undefined;
 
+      // Callback to send transcript immediately after transcription
+      const onTranscript = (transcript: string) => {
+        WebSocketGateway.send(ws, {
+          type: 'transcript',
+          transcript: transcript,
+        });
+      };
+
       const { transcript, aiResponse, audioResponse } =
         await this.voiceAgentService.processAudio(
           sessionId,
@@ -183,16 +191,11 @@ export class WebSocketHandler {
           },
           session.chatMode,
           onTextChunk,
-          onAudioChunk
+          onAudioChunk,
+          onTranscript
         );
 
-      // Send transcript to client
-      if (transcript) {
-        WebSocketGateway.send(ws, {
-          type: 'transcript',
-          transcript: transcript,
-        });
-      }
+      // Note: transcript is now sent immediately via onTranscript callback
 
       // Send AI response and audio to client (only for single mode)
       // In streaming mode, responses are already sent via callbacks
