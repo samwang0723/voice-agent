@@ -82,6 +82,35 @@
           <span>Connect</span>
         </button>
       </div>
+
+      <!-- Audio Unlock Overlay for Mobile -->
+      <div
+        id="audioUnlockOverlay"
+        class="audio-unlock-overlay hidden"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="unlockTitle"
+        aria-describedby="unlockDescription"
+      >
+        <div class="unlock-content">
+          <h2 id="unlockTitle">Enable Audio</h2>
+          <p id="unlockDescription">
+            Tap the button below to enable audio playback for the voice agent.
+          </p>
+          <button
+            id="unlockAudioBtn"
+            class="unlock-btn"
+            aria-label="Enable audio playback"
+          >
+            <svg class="btn-icon" viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M3,9V15H7L12,20V4L7,9H3M16.5,12C16.5,10.23 15.5,8.71 14,7.97V16C15.5,15.29 16.5,13.76 16.5,12M14,3.23V5.29C16.89,6.15 19,8.83 19,12C19,15.17 16.89,17.85 14,18.71V20.77C18.01,19.86 21,16.28 21,12C21,7.72 18.01,4.14 14,3.23Z"
+              />
+            </svg>
+            <span>Enable Audio</span>
+          </button>
+        </div>
+      </div>
     </div>
 
     <!-- RNNoise Library -->

@@ -19,6 +19,10 @@ let isUserDisconnected = false; // Track if user manually disconnected
 let isVadReady = false; // Track if VAD is initialized and ready
 let isOAuthInProgress = false; // Prevent multiple OAuth flows
 
+// Mobile audio unlock variables
+let audioUnlocked = false;
+let isMobileDevice = false;
+
 // Initialize AudioPlayer instance
 const audioPlayer = new AudioPlayer();
 
@@ -61,11 +65,105 @@ const messagesEl = document.getElementById('messages');
 const messagesContainer = document.querySelector('.messages-container');
 const chatModeSelect = document.getElementById('chat-mode-select');
 
+// Mobile audio unlock DOM elements
+const audioUnlockOverlay = document.getElementById('audioUnlockOverlay');
+const unlockAudioBtn = document.getElementById('unlockAudioBtn');
+
 // Streaming support variables
 let activeStreamMsg = {
   text: '',
   domEl: null,
 };
+
+// Mobile Detection and Audio Unlock Functions
+
+/**
+ * Detect if running on a mobile browser
+ * @returns {boolean} - True if mobile browser detected
+ */
+function detectMobileBrowser() {
+  const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+
+  // Check for mobile user agents
+  const mobileRegex =
+    /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i;
+  const isMobileUA = mobileRegex.test(userAgent.toLowerCase());
+
+  // Check for touch capability
+  const hasTouchScreen =
+    'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
+  // Check for specific mobile browsers
+  const isIOS = /iPad|iPhone|iPod/.test(userAgent) && !window.MSStream;
+  const isAndroid = /Android/.test(userAgent);
+  const isMobileSafari =
+    isIOS && /Safari/.test(userAgent) && !/CriOS|FxiOS/.test(userAgent);
+  const isMobileChrome = (isAndroid || isIOS) && /Chrome/.test(userAgent);
+
+  return (
+    isMobileUA ||
+    hasTouchScreen ||
+    isIOS ||
+    isAndroid ||
+    isMobileSafari ||
+    isMobileChrome
+  );
+}
+
+/**
+ * Show the audio unlock overlay for mobile users
+ */
+function showAudioUnlockOverlay() {
+  if (audioUnlockOverlay) {
+    audioUnlockOverlay.classList.remove('hidden');
+    console.log('Audio unlock overlay shown');
+    addMessage('Tap to enable audio playback', 'system');
+  }
+}
+
+/**
+ * Hide the audio unlock overlay
+ */
+function hideAudioUnlockOverlay() {
+  if (audioUnlockOverlay) {
+    audioUnlockOverlay.classList.add('hidden');
+    console.log('Audio unlock overlay hidden');
+  }
+}
+
+/**
+ * Handle audio unlock user interaction
+ * Must be called synchronously within user gesture event
+ */
+async function handleAudioUnlock() {
+  try {
+    console.log('Attempting to unlock audio...');
+
+    // Call audioPlayer.unlock() synchronously within user gesture
+    const unlockSuccess = await audioPlayer.unlock();
+
+    if (unlockSuccess) {
+      audioUnlocked = true;
+      hideAudioUnlockOverlay();
+      addMessage('Audio enabled successfully', 'system');
+      updateStatus(isConnected);
+      console.log('Audio unlock successful');
+    } else {
+      throw new Error('Audio unlock failed');
+    }
+  } catch (error) {
+    console.error('Audio unlock failed:', error);
+    addMessage(`Failed to enable audio: ${error.message}`, 'error');
+
+    // Show user-friendly error message
+    if (
+      error.message.includes('NotAllowedError') ||
+      error.message.includes('user gesture')
+    ) {
+      addMessage('Please try tapping the unlock button again', 'system');
+    }
+  }
+}
 
 // Function to get client timezone using browser API
 function getClientTimezone() {
@@ -497,11 +595,22 @@ function updateStatus(connected) {
   const tokenData = getStoredToken();
   const isAuthenticated = tokenData && tokenData.access_token;
 
+  // Check if audio unlock is needed on mobile
+  const needsAudioUnlock = isMobileDevice && !audioUnlocked;
+
   if (connected && isVadReady) {
     statusIndicator.className = 'status-indicator connected';
-    statusText.textContent = isAuthenticated
-      ? 'Ready to listen (Authenticated)'
-      : 'Ready to listen (Guest)';
+
+    if (needsAudioUnlock) {
+      statusText.textContent = isAuthenticated
+        ? 'Ready to listen - Tap to enable audio (Authenticated)'
+        : 'Ready to listen - Tap to enable audio (Guest)';
+    } else {
+      statusText.textContent = isAuthenticated
+        ? 'Ready to listen (Authenticated)'
+        : 'Ready to listen (Guest)';
+    }
+
     appContainer.classList.add('is-animating');
 
     // Show disconnect button, hide connect button
@@ -628,6 +737,15 @@ function connectWebSocket() {
               break;
             }
 
+            // Check if audio unlock is needed on mobile
+            if (isMobileDevice && !audioUnlocked) {
+              console.log(
+                '🎵 Audio unlock required on mobile - showing overlay'
+              );
+              showAudioUnlockOverlay();
+              // Audio will be queued by AudioPlayer until unlocked
+            }
+
             try {
               // Mode detection - get current chat mode with fallback to 'stream'
               const chatMode = chatModeSelect?.value || 'stream';
@@ -642,8 +760,20 @@ function connectWebSocket() {
               }
             } catch (error) {
               console.error('Error routing audio data:', error);
-              // Fallback to original method on error
-              audioPlayer.enqueue(data.speechAudio);
+
+              // Handle mobile audio unlock errors specifically
+              if (
+                error.message.includes('NotAllowedError') ||
+                error.message.includes('user gesture')
+              ) {
+                console.log(
+                  '🎵 Audio requires user gesture - showing unlock overlay'
+                );
+                showAudioUnlockOverlay();
+              } else {
+                // Fallback to original method on other errors
+                audioPlayer.enqueue(data.speechAudio);
+              }
             }
           }
           break;
@@ -682,6 +812,16 @@ function connectWebSocket() {
             );
             break;
           }
+
+          // Check if audio unlock is needed on mobile
+          if (isMobileDevice && !audioUnlocked) {
+            console.log(
+              '🎵 Audio unlock required for streaming - showing overlay'
+            );
+            showAudioUnlockOverlay();
+            // Audio will be queued by AudioPlayer until unlocked
+          }
+
           audioPlayer.enqueue(data.data);
           break;
         case 'agent-stream-complete':
@@ -1081,9 +1221,23 @@ async function initializeApp() {
   // Configure ONNX for compatibility before anything else
   configureONNXRuntime();
 
+  // Detect mobile browser and set global flag
+  isMobileDevice = detectMobileBrowser();
+  console.log('Mobile device detected:', isMobileDevice);
+
+  // Update audioUnlocked status from AudioPlayer
+  if (audioPlayer) {
+    audioUnlocked = audioPlayer.audioUnlocked;
+  }
+
   checkBrowserCompatibility();
 
   if (checkSecureContext()) {
+    // Show audio unlock overlay if needed on mobile
+    if (isMobileDevice && !audioUnlocked) {
+      showAudioUnlockOverlay();
+    }
+
     // Set initial config on the backend, then initialize VAD and connect
     await initializeVAD();
     connectWebSocket(); // This will also trigger auto-start listening when ready
@@ -1107,6 +1261,30 @@ function setupEventListeners() {
         return;
       }
       loginWithGoogle();
+    });
+  }
+
+  // Add audio unlock button event listener
+  if (unlockAudioBtn) {
+    unlockAudioBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      handleAudioUnlock();
+    });
+
+    // Also handle touch events for better mobile support
+    unlockAudioBtn.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      handleAudioUnlock();
+    });
+  }
+
+  // Add overlay click handler (clicking outside content should also unlock)
+  if (audioUnlockOverlay) {
+    audioUnlockOverlay.addEventListener('click', (e) => {
+      // Only handle clicks on the overlay itself, not its children
+      if (e.target === audioUnlockOverlay) {
+        handleAudioUnlock();
+      }
     });
   }
 
@@ -1149,6 +1327,11 @@ function setupEventListeners() {
 // Initialize everything when DOM is loaded
 window.addEventListener('DOMContentLoaded', async () => {
   configureONNXRuntime();
+
+  // Detect mobile browser early
+  isMobileDevice = detectMobileBrowser();
+  console.log('Mobile device detected:', isMobileDevice);
+
   setupAudioPlayerCallbacks();
   setupEventListeners();
   await bootstrapAuth();
@@ -1186,6 +1369,13 @@ function setupAudioPlayerCallbacks() {
     const lastAgentMessage = agentMessages[agentMessages.length - 1];
     if (lastAgentMessage) {
       lastAgentMessage.classList.add('speaking');
+    }
+
+    // Update unlock status from AudioPlayer
+    if (audioPlayer.audioUnlocked && !audioUnlocked) {
+      audioUnlocked = true;
+      hideAudioUnlockOverlay();
+      updateStatus(isConnected);
     }
   };
 

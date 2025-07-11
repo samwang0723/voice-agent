@@ -13,12 +13,117 @@ class AudioPlayer {
     this.minLeadTime = 0.15; // 150ms minimum lead time
     this.crossfadeDuration = 0.005; // 5ms crossfade to eliminate clicks
 
+    // Mobile autoplay compliance
+    this.audioUnlocked = false;
+    this.pendingQueue = [];
+    this.isMobile = this.isMobileBrowser();
+
     // Event callbacks
     this.onStart = null;
     this.onFinish = null;
     this.onCancel = null;
 
-    this.initializeAudioContext();
+    // Only auto-initialize on desktop browsers
+    if (!this.isMobile) {
+      this.initializeAudioContext();
+    }
+  }
+
+  /**
+   * Detect if running on a mobile browser
+   * @returns {boolean} - True if mobile browser detected
+   */
+  isMobileBrowser() {
+    const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+
+    // Check for mobile user agents
+    const mobileRegex =
+      /android|webos|iphone|ipad|ipod|blackberry|iemobile|opera mini/i;
+    const isMobileUA = mobileRegex.test(userAgent.toLowerCase());
+
+    // Check for touch capability
+    const hasTouchScreen =
+      'ontouchstart' in window || navigator.maxTouchPoints > 0;
+
+    // Check for specific mobile browsers
+    const isIOS = /iPad|iPhone|iPod/.test(userAgent) && !window.MSStream;
+    const isAndroid = /Android/.test(userAgent);
+    const isMobileSafari =
+      isIOS && /Safari/.test(userAgent) && !/CriOS|FxiOS/.test(userAgent);
+    const isMobileChrome = (isAndroid || isIOS) && /Chrome/.test(userAgent);
+
+    return (
+      isMobileUA ||
+      hasTouchScreen ||
+      isIOS ||
+      isAndroid ||
+      isMobileSafari ||
+      isMobileChrome
+    );
+  }
+
+  /**
+   * Check if user gesture is required for audio playback
+   * @returns {boolean} - True if user gesture is needed
+   */
+  requiresUserGesture() {
+    return this.isMobile && !this.audioUnlocked;
+  }
+
+  /**
+   * Unlock audio playback (must be called in response to user gesture)
+   * @returns {Promise<boolean>} - True if unlock successful
+   */
+  async unlock() {
+    if (this.audioUnlocked) {
+      console.log('AudioPlayer: Audio already unlocked');
+      return true;
+    }
+
+    try {
+      // Initialize AudioContext if not already done
+      if (!this.isInitialized) {
+        await this.initializeAudioContext();
+      }
+
+      // Resume AudioContext if suspended
+      if (this.audioContext && this.audioContext.state === 'suspended') {
+        await this.audioContext.resume();
+      }
+
+      // Set unlock flag
+      this.audioUnlocked = true;
+
+      console.log('AudioPlayer: Audio unlocked successfully');
+
+      // Process any pending audio
+      await this.processPendingQueue();
+
+      return true;
+    } catch (error) {
+      console.error('AudioPlayer: Failed to unlock audio:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Process pending audio queue after unlock
+   */
+  async processPendingQueue() {
+    if (this.pendingQueue.length === 0) {
+      return;
+    }
+
+    console.log(
+      `AudioPlayer: Processing ${this.pendingQueue.length} pending audio chunks`
+    );
+
+    // Move pending chunks to main queue
+    this.audioQueue.push(...this.pendingQueue);
+    this.pendingQueue = [];
+
+    // Process the queue
+    await this.processAudioQueue();
   }
 
   /**
@@ -49,6 +154,13 @@ class AudioPlayer {
    * Ensure audio context is ready for use
    */
   async ensureAudioContextReady() {
+    // Check if user gesture is required on mobile
+    if (this.requiresUserGesture()) {
+      throw new Error(
+        'NotAllowedError: Audio playback requires user gesture on mobile browsers'
+      );
+    }
+
     if (!this.isInitialized || !this.audioContext) {
       await this.initializeAudioContext();
     }
@@ -58,6 +170,15 @@ class AudioPlayer {
         await this.audioContext.resume();
         console.log('AudioPlayer: AudioContext resumed');
       } catch (error) {
+        // Handle common mobile autoplay errors
+        if (error.name === 'NotAllowedError') {
+          console.error(
+            'AudioPlayer: Audio playback not allowed - user gesture required'
+          );
+          throw new Error(
+            'NotAllowedError: Audio playback requires user gesture'
+          );
+        }
         console.error('AudioPlayer: Failed to resume AudioContext:', error);
         throw error;
       }
@@ -270,6 +391,15 @@ class AudioPlayer {
     }
 
     try {
+      // Check if user gesture is required
+      if (this.requiresUserGesture()) {
+        console.log(
+          'AudioPlayer: Queueing audio chunk - waiting for user gesture'
+        );
+        this.pendingQueue.push(base64Chunk);
+        return;
+      }
+
       // Add to queue
       this.audioQueue.push(base64Chunk);
 
@@ -289,6 +419,16 @@ class AudioPlayer {
     if (!base64AudioData || typeof base64AudioData !== 'string') {
       console.warn('AudioPlayer: Invalid base64 audio data provided');
       return;
+    }
+
+    // Check if user gesture is required
+    if (this.requiresUserGesture()) {
+      console.log(
+        'AudioPlayer: Cannot play audio - user gesture required on mobile'
+      );
+      throw new Error(
+        'NotAllowedError: Audio playback requires user gesture on mobile browsers'
+      );
     }
 
     try {
@@ -405,6 +545,7 @@ class AudioPlayer {
       // Clear tracking sets
       this.scheduledSources.clear();
       this.audioQueue = [];
+      this.pendingQueue = [];
 
       // Reset state
       this.currentlyPlaying = false;
@@ -427,6 +568,7 @@ class AudioPlayer {
   flush() {
     try {
       this.audioQueue = [];
+      this.pendingQueue = [];
       console.log('AudioPlayer: Audio queue flushed');
     } catch (error) {
       console.error('AudioPlayer: Error flushing queue:', error);
@@ -450,10 +592,14 @@ class AudioPlayer {
       isInitialized: this.isInitialized,
       isPlaying: this.isPlaying(),
       queueLength: this.audioQueue.length,
+      pendingQueueLength: this.pendingQueue.length,
       scheduledSources: this.scheduledSources.size,
       audioContextState: this.audioContext?.state,
       nextScheduledTime: this.nextScheduledTime,
       currentTime: this.audioContext?.currentTime,
+      isMobile: this.isMobile,
+      audioUnlocked: this.audioUnlocked,
+      requiresUserGesture: this.requiresUserGesture(),
     };
   }
 }
