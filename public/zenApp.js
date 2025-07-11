@@ -334,6 +334,11 @@ class ZenApp extends EventEmitter {
       }
     });
 
+    this.vad.on('vadMisfire', () => {
+      console.log('VAD misfire detected, resetting orb state.');
+      this.ui.updateOrbState('idle');
+    });
+
     this.vad.on('audioProcessed', (event) => {
       this.ui.updateOrbState('processing');
 
@@ -373,6 +378,11 @@ class ZenApp extends EventEmitter {
     // UI events - some are dispatched on document
     document.addEventListener('loginRequested', () => {
       this.auth.loginWithGoogle();
+    });
+
+    document.addEventListener('logoutRequested', () => {
+      this.auth.clearToken();
+      this.ui.showMessage('Logged out successfully', 'system');
     });
 
     document.addEventListener('orbClick', () => {
@@ -596,6 +606,27 @@ class ZenApp extends EventEmitter {
     if (this.isListening) {
       this._stopListening();
     } else {
+      // First, ensure audio is unlocked. This is a great place for it.
+      if (!this.audioPlayer.audioUnlocked) {
+        try {
+          const unlocked = await this.audioPlayer.unlock();
+          if (unlocked) {
+            this.ui.showMessage('Audio enabled successfully', 'system');
+            this.ui.updateTestAudioButton(true);
+          } else {
+            // It might fail if the user gesture wasn't "trusted".
+            this.ui.showError(
+              'Could not enable audio. Please click the orb again.'
+            );
+            return;
+          }
+        } catch (error) {
+          console.error('Error unlocking audio:', error);
+          this.ui.showError('Failed to enable audio.');
+          return;
+        }
+      }
+
       // Initialize VAD if not ready
       if (!this.isVadReady) {
         this.ui.showMessage('Initializing voice detection...', 'info');

@@ -12,8 +12,58 @@
       rel="stylesheet"
     />
     <style>
+      /* latin-ext */
+      @font-face {
+        font-family: 'Google Sans';
+        font-style: normal;
+        font-weight: 500;
+        font-display: swap;
+        src: url(https://fonts.gstatic.com/s/googlesans/v27/4UabrENHsxJlGDuGo1OIlLU94Yt9CwZ-Pw.woff2)
+          format('woff2');
+        unicode-range:
+          U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF,
+          U+2113, U+2C60-2C7F, U+A720-A7FF;
+      }
+      /* latin */
+      @font-face {
+        font-family: 'Google Sans';
+        font-style: normal;
+        font-weight: 500;
+        font-display: swap;
+        src: url(https://fonts.gstatic.com/s/googlesans/v27/4UabrENHsxJlGDuGo1OIlLU94YtzCwY.woff2)
+          format('woff2');
+        unicode-range:
+          U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+          U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+          U+FEFF, U+FFFD;
+      }
+      /* latin-ext */
+      @font-face {
+        font-family: 'Google Sans';
+        font-style: normal;
+        font-weight: 400;
+        font-display: swap;
+        src: url(https://fonts.gstatic.com/s/googlesans/v27/4UaGrENHsxJlGDuGo1OIlL3Awp5MKg.woff2)
+          format('woff2');
+        unicode-range:
+          U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF,
+          U+2113, U+2C60-2C7F, U+A720-A7FF;
+      }
+      /* latin */
+      @font-face {
+        font-family: 'Google Sans';
+        font-style: normal;
+        font-weight: 400;
+        font-display: swap;
+        src: url(https://fonts.gstatic.com/s/googlesans/v27/4UaGrENHsxJlGDuGo1OIlL3Owp4.woff2)
+          format('woff2');
+        unicode-range:
+          U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+          U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+          U+FEFF, U+FFFD;
+      }
       body {
-        font-family: 'Inter', sans-serif;
+        font-family: 'Google Sans', 'Inter', sans-serif;
         background-color: #121212;
         color: #e0e0e0;
         overflow: hidden;
@@ -184,6 +234,19 @@
         background-color: rgba(255, 255, 255, 0.3);
         border-radius: 2px;
       }
+      .settings-row {
+        font-size: 0.9rem; /* Adjust this value as needed */
+      }
+      select {
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236B7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
+        background-position: right 0.5rem center;
+        background-repeat: no-repeat;
+        background-size: 1.25em;
+        padding-right: 2.5rem; /* Add padding to the right */
+      }
     </style>
   </head>
   <body
@@ -194,38 +257,27 @@
       class="screen absolute inset-0 flex flex-col items-center justify-center text-center p-8 opacity-100"
     >
       <h1 class="text-4xl font-light text-white mb-2">Zen AI</h1>
-      <p class="text-lg text-gray-400 mb-12">A calm space for conversation.</p>
+      <p class="text-lg text-gray-400 mb-12">A calm space for conversation</p>
       <button
         id="google-login-button"
         class="bg-white text-gray-800 font-medium py-3 px-6 rounded-lg flex items-center justify-center shadow-lg hover:shadow-xl transition-shadow"
       >
-        <svg
-          class="w-6 h-6 mr-3"
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 48 48"
-          width="48px"
-          height="48px"
-        >
+        <svg class="google-icon w-6 h-6 mr-3 flex-shrink-0" viewBox="0 0 24 24">
           <path
             fill="#4285F4"
-            d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"
+            d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
           />
           <path
             fill="#34A853"
-            d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"
-            transform="rotate(360 24 24)"
+            d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
           />
           <path
             fill="#FBBC05"
-            d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"
+            d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
           />
           <path
             fill="#EA4335"
-            d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.222,0-9.612-3.28-11.28-7.792l-6.522,5.025C9.505,39.556,16.227,44,24,44z"
-          />
-          <path
-            fill="#FFFFFF"
-            d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12c0-6.627,5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24c0,11.045,8.955,20,20,20c11.045,0,20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"
+            d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
           />
         </svg>
         Sign in with Google
@@ -286,7 +338,29 @@
         </div>
       </div>
 
-      <div class="w-full flex justify-end p-4 absolute bottom-0 right-0">
+      <div
+        class="w-full flex justify-between items-center p-4 absolute bottom-0"
+      >
+        <button
+          id="logout-button"
+          class="p-2 rounded-full hover:bg-white/10 transition-colors"
+        >
+          <svg
+            class="h-6 w-6 text-gray-500"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="1.5"
+              d="M8.25 9V5.25A2.25 2.25 0 0 1 10.5 3h6a2.25 2.25 0 0 1 2.25 2.25v13.5A2.25 2.25 0 0 1 16.5 21h-6a2.25 2.25 0 0 1-2.25-2.25V15m-3 0-3-3m0 0 3-3m-3 3H15"
+            />
+          </svg>
+        </button>
+
         <button
           id="settings-button"
           class="p-2 rounded-full hover:bg-white/10 transition-colors"
@@ -346,7 +420,7 @@
       </div>
 
       <div class="space-y-6">
-        <div class="flex items-center justify-between">
+        <div class="flex items-center justify-between settings-row">
           <div class="flex items-center space-x-3">
             <svg
               id="connection-status-icon"
@@ -363,12 +437,12 @@
             </svg>
             <span class="text-white">Connection</span>
           </div>
-          <span id="connection-status-text" class="text-green-400 font-medium"
+          <span id="connection-status-text" class="text-green-400 text-md"
             >Connected</span
           >
         </div>
 
-        <div class="flex items-center justify-between">
+        <div class="flex items-center justify-between settings-row">
           <div class="flex items-center space-x-3">
             <svg
               class="h-5 w-5 text-blue-400"
@@ -396,7 +470,7 @@
           </select>
         </div>
 
-        <div class="flex items-center justify-between">
+        <div class="flex items-center justify-between settings-row">
           <div class="flex items-center space-x-3">
             <svg
               class="h-5 w-5 text-purple-400"
@@ -426,7 +500,7 @@
           </select>
         </div>
 
-        <div class="flex items-center justify-between">
+        <div class="flex items-center justify-between settings-row">
           <div class="flex items-center space-x-3">
             <svg
               class="h-5 w-5 text-gray-400"
@@ -453,7 +527,7 @@
           </select>
         </div>
 
-        <div class="flex items-center justify-between">
+        <div class="flex items-center justify-between settings-row">
           <div class="flex items-center space-x-3">
             <svg
               class="h-5 w-5 text-yellow-400"
@@ -484,7 +558,7 @@
           </label>
         </div>
 
-        <div class="flex items-center justify-between">
+        <div class="flex items-center justify-between settings-row">
           <div class="flex items-center space-x-3">
             <svg
               class="h-5 w-5 text-green-400"
@@ -504,10 +578,40 @@
           </div>
           <button
             id="test-audio-button"
-            class="bg-blue-600 hover:bg-blue-700 text-white font-medium py-1 px-3 rounded-md transition-colors"
+            class="bg-blue-600 hover:bg-blue-700 text-white text-md py-1 px-3 rounded-md transition-colors"
           >
             Test
           </button>
+        </div>
+
+        <div class="flex items-center justify-between settings-row">
+          <div class="flex items-center space-x-3">
+            <svg
+              class="h-5 w-5 text-gray-400"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
+              />
+            </svg>
+            <span class="text-white">Show System Messages</span>
+          </div>
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input
+              id="system-message-toggle"
+              type="checkbox"
+              class="sr-only peer"
+            />
+            <div
+              class="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"
+            ></div>
+          </label>
         </div>
       </div>
     </div>

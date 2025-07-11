@@ -77,6 +77,10 @@ class UIManager extends EventTarget {
     );
     this.elements.testAudioButton =
       document.getElementById('test-audio-button');
+    this.elements.systemMessageToggle = document.getElementById(
+      'system-message-toggle'
+    );
+    this.elements.logoutButton = document.getElementById('logout-button');
   }
 
   // Setup event listeners
@@ -92,6 +96,13 @@ class UIManager extends EventTarget {
     if (this.elements.orbCenter) {
       this.elements.orbCenter.addEventListener('click', () => {
         this.handleOrbClick();
+      });
+    }
+
+    // Logout button
+    if (this.elements.logoutButton) {
+      this.elements.logoutButton.addEventListener('click', () => {
+        document.dispatchEvent(new CustomEvent('logoutRequested'));
       });
     }
 
@@ -278,6 +289,10 @@ class UIManager extends EventTarget {
 
   // Transcript management
   appendTranscriptLine(content, type = 'system', timestamp = null) {
+    if (type === 'system' && !this.getSettings().showSystemMessages) {
+      return;
+    }
+
     if (!this.elements.transcriptContent) return;
 
     // Hide the status text when adding actual content
@@ -298,14 +313,14 @@ class UIManager extends EventTarget {
     switch (type) {
       case 'user':
         line.innerHTML = `
-          <div class="user-text text-sm opacity-60">
-            You: ${content}
+          <div class="user-text text-md opacity-60">
+            ${content}
           </div>
         `;
         break;
       case 'agent':
         line.innerHTML = `
-          <div class="text-white text-sm">
+          <div class="text-white text-md">
             ${content}
           </div>
         `;
@@ -319,7 +334,7 @@ class UIManager extends EventTarget {
         break;
       case 'error':
         line.innerHTML = `
-          <div class="text-red-400 text-xs">
+          <div class="text-red-400 text-sm">
             ⚠ ${content}
           </div>
         `;
@@ -348,7 +363,7 @@ class UIManager extends EventTarget {
       streamingLine = document.createElement('div');
       streamingLine.className = 'transcript-line streaming-message mb-2 agent';
       streamingLine.innerHTML = `
-        <div class="text-white text-sm" data-streaming-text="${this._escapeHtml(delta)}">
+        <div class="text-white text-md" data-streaming-text="${this._escapeHtml(delta)}">
           ${delta}
         </div>
       `;
@@ -660,6 +675,7 @@ class UIManager extends EventTarget {
       ttsEngine: this.elements.ttsEngineSelect?.value || 'elevenlabs',
       chatMode: this.elements.chatModeSelect?.value || 'stream',
       noiseReduction: this.elements.noiseReductionToggle?.checked !== false, // Default to true
+      showSystemMessages: this.elements.systemMessageToggle?.checked !== false,
     };
   }
 
@@ -680,6 +696,12 @@ class UIManager extends EventTarget {
     ) {
       this.elements.noiseReductionToggle.checked = settings.noiseReduction;
     }
+    if (
+      typeof settings.showSystemMessages === 'boolean' &&
+      this.elements.systemMessageToggle
+    ) {
+      this.elements.systemMessageToggle.checked = settings.showSystemMessages;
+    }
   }
 
   // Setup settings change listeners
@@ -689,6 +711,7 @@ class UIManager extends EventTarget {
       this.elements.ttsEngineSelect,
       this.elements.chatModeSelect,
       this.elements.noiseReductionToggle,
+      this.elements.systemMessageToggle,
     ];
 
     elements.forEach((element) => {

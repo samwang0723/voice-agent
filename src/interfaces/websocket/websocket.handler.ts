@@ -64,7 +64,7 @@ export class WebSocketHandler {
       // Always send greeting message regardless of authentication status
       WebSocketGateway.send(ws, {
         type: 'agent',
-        message: 'Hello! How may I assist you today?',
+        message: 'Hi Sir, Good to see you back!',
       });
     } catch (error) {
       logger.error(
