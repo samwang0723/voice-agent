@@ -13,6 +13,12 @@ import {
 import { transcriptionConfigs } from '../config';
 import { AgentSwarmService } from '../infrastructure/ai/agentSwarm.service';
 
+// Map TTS engine names to their streaming service keys
+const streamProviderMap: Record<string, string> = {
+  azure: 'azure-stream',
+  elevenlabs: 'elevenlabs-stream',
+};
+
 export class VoiceAgentService {
   private activeTTSControllers: Map<string, AbortController> = new Map();
 
@@ -31,7 +37,7 @@ export class VoiceAgentService {
     sttEngine: string,
     ttsEngine: string,
     context?: any,
-    chatMode: 'single' | 'stream' = 'single',
+    chatMode: 'single' | 'stream' = 'stream',
     onTextChunk?: (chunk: string) => void,
     onAudioChunk?: (chunk: Buffer) => void,
     onTranscript?: (transcript: string) => void
@@ -139,7 +145,9 @@ export class VoiceAgentService {
 
           try {
             // Get streaming TTS service if available
-            const streamingTtsService = getStreamingTTSService('azure-stream');
+            const streamingTtsService = streamProviderMap[ttsEngine]
+              ? getStreamingTTSService(streamProviderMap[ttsEngine])
+              : null;
             let audioStreamPromise: Promise<void> | null = null;
 
             if (streamingTtsService && onAudioChunk) {

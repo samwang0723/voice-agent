@@ -98,6 +98,17 @@ export const ttsConfigs: Record<string, TextToSpeechConfig> = {
   },
 };
 
+// Streaming Audio Configuration
+export interface StreamingAudioConfig {
+  chunkSize: number;
+  sampleWidth: number;
+}
+
+export const streamingAudioConfig: StreamingAudioConfig = {
+  chunkSize: 16000, // 16KB chunks for ~80ms at 16kHz mono PCM
+  sampleWidth: 2, // bytes per 16-bit sample
+};
+
 // Agent-Swarm Configuration
 export interface AgentSwarmConfig {
   baseURL: string;

@@ -16,6 +16,7 @@ import {
   AzureTextToSpeechService,
 } from '../../infrastructure/ai/azure.service';
 import { AzureStreamingTextToSpeechService } from '../../infrastructure/ai/azureStreaming.service';
+import { ElevenLabsStreamingTextToSpeechService } from '../../infrastructure/ai/elevenlabsStreaming.service';
 import type {
   ITranscriptionService,
   ITextToSpeechService,
@@ -40,6 +41,7 @@ const ttsServices: Record<string, ITextToSpeechService> = {
 
 const streamingTtsServices: Record<string, IStreamingTextToSpeechService> = {
   'azure-stream': new AzureStreamingTextToSpeechService(),
+  'elevenlabs-stream': new ElevenLabsStreamingTextToSpeechService(),
 };
 
 export function getTranscriptionService(

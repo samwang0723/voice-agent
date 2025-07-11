@@ -21,6 +21,7 @@
     "@ai-sdk/google": "^1.2.19",
     "@cartesia/cartesia-js": "^2.2.5",
     "@deepgram/sdk": "^4.7.0",
+    "@elevenlabs/elevenlabs-js": "^2.5.0",
     "ai": "^4.3.16",
     "compromise": "^14.0.0",
     "elevenlabs": "^1.0.0",

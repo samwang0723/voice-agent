@@ -583,7 +583,7 @@ function connectWebSocket() {
     // Send configuration to the server
     const sttEngine = document.getElementById('stt-engine-select').value;
     const ttsEngine = document.getElementById('tts-engine-select').value;
-    const chatMode = chatModeSelect ? chatModeSelect.value : 'single';
+    const chatMode = chatModeSelect ? chatModeSelect.value : 'stream';
     ws.send(
       JSON.stringify({
         type: 'config',
@@ -629,8 +629,8 @@ function connectWebSocket() {
             }
 
             try {
-              // Mode detection - get current chat mode with fallback to 'single'
-              const chatMode = chatModeSelect?.value || 'single';
+              // Mode detection - get current chat mode with fallback to 'stream'
+              const chatMode = chatModeSelect?.value || 'stream';
 
               // Conditional routing based on chat mode
               if (chatMode === 'stream') {
@@ -1118,7 +1118,7 @@ function setupEventListeners() {
     if (ws && ws.readyState === WebSocket.OPEN) {
       const sttEngine = sttEngineSelect.value;
       const ttsEngine = ttsEngineSelect.value;
-      const chatMode = chatModeSelect ? chatModeSelect.value : 'single';
+      const chatMode = chatModeSelect ? chatModeSelect.value : 'stream';
       ws.send(
         JSON.stringify({
           type: 'config',
