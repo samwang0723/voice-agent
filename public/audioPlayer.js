@@ -12,8 +12,9 @@ class AudioPlayer {
     this.currentlyPlaying = false;
     this.minLeadTime = 0.15; // 150ms minimum lead time
     this.crossfadeDuration = 0.005; // 5ms crossfade to eliminate clicks
+    this.pitchFactor = 1.0; // Default pitch factor (1.0 = normal speed/pitch)
 
-    // Mobile autoplay compliance
+    // Autoplay compliance
     this.audioUnlocked = false;
     this.pendingQueue = [];
     this.isMobile = this.isMobileBrowser();
@@ -22,11 +23,13 @@ class AudioPlayer {
     this.onStart = null;
     this.onFinish = null;
     this.onCancel = null;
+    this.onAutoplayBlocked = null; // New callback for autoplay issues
 
-    // Only auto-initialize on desktop browsers
-    if (!this.isMobile) {
-      this.initializeAudioContext();
-    }
+    // Don't auto-initialize AudioContext anymore - wait for user interaction
+    // Modern browsers require user gesture even on desktop
+    console.log(
+      'AudioPlayer: Waiting for user interaction to initialize audio'
+    );
   }
 
   /**
@@ -67,7 +70,9 @@ class AudioPlayer {
    * @returns {boolean} - True if user gesture is needed
    */
   requiresUserGesture() {
-    return this.isMobile && !this.audioUnlocked;
+    // Always check if audio is unlocked, regardless of device type
+    // Modern browsers require user interaction on both mobile and desktop
+    return !this.audioUnlocked;
   }
 
   /**
@@ -134,9 +139,37 @@ class AudioPlayer {
       this.audioContext = new (window.AudioContext ||
         window.webkitAudioContext)();
 
+      // Check initial state
+      console.log(
+        'AudioPlayer: Initial AudioContext state:',
+        this.audioContext.state
+      );
+
       // Handle audio context state changes
       if (this.audioContext.state === 'suspended') {
-        await this.audioContext.resume();
+        console.log(
+          'AudioPlayer: AudioContext is suspended, attempting to resume...'
+        );
+
+        try {
+          await this.audioContext.resume();
+          console.log('AudioPlayer: AudioContext resumed successfully');
+        } catch (resumeError) {
+          // This is expected on first initialization without user gesture
+          console.log(
+            'AudioPlayer: AudioContext resume failed - user gesture required:',
+            resumeError.message
+          );
+
+          // Trigger callback to notify UI
+          if (this.onAutoplayBlocked) {
+            this.onAutoplayBlocked();
+          }
+
+          // Don't throw - we'll try again when user interacts
+          this.isInitialized = true; // Mark as initialized even if suspended
+          return;
+        }
       }
 
       this.isInitialized = true;
@@ -154,11 +187,18 @@ class AudioPlayer {
    * Ensure audio context is ready for use
    */
   async ensureAudioContextReady() {
-    // Check if user gesture is required on mobile
+    // Check if user gesture is required
     if (this.requiresUserGesture()) {
-      throw new Error(
-        'NotAllowedError: Audio playback requires user gesture on mobile browsers'
+      const error = new Error(
+        'NotAllowedError: Audio playback requires user gesture'
       );
+
+      // Trigger callback to notify UI
+      if (this.onAutoplayBlocked) {
+        this.onAutoplayBlocked();
+      }
+
+      throw error;
     }
 
     if (!this.isInitialized || !this.audioContext) {
@@ -170,11 +210,20 @@ class AudioPlayer {
         await this.audioContext.resume();
         console.log('AudioPlayer: AudioContext resumed');
       } catch (error) {
-        // Handle common mobile autoplay errors
-        if (error.name === 'NotAllowedError') {
+        // Handle common autoplay errors
+        if (
+          error.name === 'NotAllowedError' ||
+          error.name === 'NotSupportedError'
+        ) {
           console.error(
             'AudioPlayer: Audio playback not allowed - user gesture required'
           );
+
+          // Trigger callback to notify UI
+          if (this.onAutoplayBlocked) {
+            this.onAutoplayBlocked();
+          }
+
           throw new Error(
             'NotAllowedError: Audio playback requires user gesture'
           );
@@ -182,6 +231,64 @@ class AudioPlayer {
         console.error('AudioPlayer: Failed to resume AudioContext:', error);
         throw error;
       }
+    }
+  }
+
+  /**
+   * Set the pitch/playback rate factor
+   * @param {number} factor - Pitch factor (0.5 = half speed/lower pitch, 2.0 = double speed/higher pitch)
+   */
+  setPitchFactor(factor) {
+    if (typeof factor !== 'number' || factor <= 0 || factor > 10) {
+      console.warn(
+        'AudioPlayer: Invalid pitch factor. Must be between 0 and 10.'
+      );
+      return;
+    }
+    this.pitchFactor = factor;
+    console.log(`AudioPlayer: Pitch factor set to ${factor}`);
+  }
+
+  /**
+   * Convert Int16Array PCM data to AudioBuffer
+   * @param {Int16Array} int16Array - Int16Array PCM audio data
+   * @param {number} sampleRate - Sample rate of the input audio (default: 16000)
+   * @returns {Promise<AudioBuffer>} - Decoded audio buffer
+   */
+  async convertInt16ArrayToAudioBuffer(int16Array, sampleRate = 16000) {
+    try {
+      // Convert Int16Array to Float32Array (normalized to [-1, 1])
+      const float32Array = new Float32Array(int16Array.length);
+      for (let i = 0; i < int16Array.length; i++) {
+        float32Array[i] = int16Array[i] / 32768.0;
+      }
+
+      // Create AudioBuffer
+      const numberOfChannels = 1; // Mono
+      const length = float32Array.length;
+
+      // Create buffer with target sample rate
+      const audioBuffer = this.audioContext.createBuffer(
+        numberOfChannels,
+        Math.ceil((length * this.audioContext.sampleRate) / sampleRate),
+        this.audioContext.sampleRate
+      );
+
+      // Resample if needed
+      if (this.audioContext.sampleRate !== sampleRate) {
+        this.resampleAudio(float32Array, audioBuffer, sampleRate);
+      } else {
+        // Direct copy for same sample rate
+        audioBuffer.copyToChannel(float32Array, 0);
+      }
+
+      return audioBuffer;
+    } catch (error) {
+      console.error(
+        'AudioPlayer: Failed to convert Int16Array to AudioBuffer:',
+        error
+      );
+      throw error;
     }
   }
 
@@ -289,22 +396,25 @@ class AudioPlayer {
     const gainNode = this.audioContext.createGain();
 
     source.buffer = audioBuffer;
+    source.playbackRate.value = this.pitchFactor; // Apply pitch adjustment
     source.connect(gainNode);
     gainNode.connect(this.audioContext.destination);
 
     // Apply crossfade to eliminate clicks/pops
     const fadeInEnd = startTime + this.crossfadeDuration;
     const fadeOutStart =
-      startTime + audioBuffer.duration - this.crossfadeDuration;
+      startTime +
+      audioBuffer.duration / this.pitchFactor -
+      this.crossfadeDuration;
 
     gainNode.gain.setValueAtTime(0, startTime);
     gainNode.gain.linearRampToValueAtTime(1, fadeInEnd);
 
-    if (audioBuffer.duration > this.crossfadeDuration * 2) {
+    if (audioBuffer.duration / this.pitchFactor > this.crossfadeDuration * 2) {
       gainNode.gain.setValueAtTime(1, fadeOutStart);
       gainNode.gain.linearRampToValueAtTime(
         0,
-        startTime + audioBuffer.duration
+        startTime + audioBuffer.duration / this.pitchFactor
       );
     }
 
@@ -352,16 +462,39 @@ class AudioPlayer {
 
       // Process all queued chunks
       while (this.audioQueue.length > 0) {
-        const base64Chunk = this.audioQueue.shift();
+        const chunk = this.audioQueue.shift();
 
         try {
-          const audioBuffer = await this.convertPCMToAudioBuffer(base64Chunk);
+          let audioBuffer;
+
+          // Handle different input types
+          if (typeof chunk === 'string') {
+            // Base64 encoded PCM
+            audioBuffer = await this.convertPCMToAudioBuffer(chunk);
+          } else if (chunk instanceof Int16Array) {
+            // Direct Int16Array
+            audioBuffer = await this.convertInt16ArrayToAudioBuffer(
+              chunk,
+              chunk.sampleRate || 16000
+            );
+          } else if (
+            chunk.data instanceof Int16Array &&
+            typeof chunk.sampleRate === 'number'
+          ) {
+            // Object with Int16Array data and sampleRate
+            audioBuffer = await this.convertInt16ArrayToAudioBuffer(
+              chunk.data,
+              chunk.sampleRate
+            );
+          } else {
+            throw new Error('Unsupported audio chunk format');
+          }
 
           // Schedule the chunk
           this.scheduleAudioBuffer(audioBuffer, this.nextScheduledTime);
 
-          // Update next scheduled time
-          this.nextScheduledTime += audioBuffer.duration;
+          // Update next scheduled time (account for pitch factor)
+          this.nextScheduledTime += audioBuffer.duration / this.pitchFactor;
 
           // Trigger onStart callback for first chunk
           if (!this.currentlyPlaying) {
@@ -382,11 +515,26 @@ class AudioPlayer {
 
   /**
    * Add an audio chunk to the playback queue
-   * @param {string} base64Chunk - Base64 encoded PCM audio data
+   * @param {string|Int16Array|{data: Int16Array, sampleRate: number}} chunk - Audio data (base64 string, Int16Array, or object with data and sampleRate)
    */
-  async enqueue(base64Chunk) {
-    if (!base64Chunk || typeof base64Chunk !== 'string') {
+  async enqueue(chunk) {
+    if (!chunk) {
       console.warn('AudioPlayer: Invalid audio chunk provided');
+      return;
+    }
+
+    // Validate chunk format
+    const isValidChunk =
+      typeof chunk === 'string' ||
+      chunk instanceof Int16Array ||
+      (chunk &&
+        chunk.data instanceof Int16Array &&
+        typeof chunk.sampleRate === 'number');
+
+    if (!isValidChunk) {
+      console.warn(
+        'AudioPlayer: Invalid audio chunk format. Expected base64 string, Int16Array, or {data: Int16Array, sampleRate: number}'
+      );
       return;
     }
 
@@ -396,12 +544,12 @@ class AudioPlayer {
         console.log(
           'AudioPlayer: Queueing audio chunk - waiting for user gesture'
         );
-        this.pendingQueue.push(base64Chunk);
+        this.pendingQueue.push(chunk);
         return;
       }
 
       // Add to queue
-      this.audioQueue.push(base64Chunk);
+      this.audioQueue.push(chunk);
 
       // Process the queue
       await this.processAudioQueue();
@@ -458,6 +606,7 @@ class AudioPlayer {
       const gainNode = this.audioContext.createGain();
 
       source.buffer = audioBuffer;
+      source.playbackRate.value = this.pitchFactor; // Apply pitch adjustment
       source.connect(gainNode);
       gainNode.connect(this.audioContext.destination);
 
@@ -466,16 +615,21 @@ class AudioPlayer {
       const startTime = currentTime;
       const fadeInEnd = startTime + this.crossfadeDuration;
       const fadeOutStart =
-        startTime + audioBuffer.duration - this.crossfadeDuration;
+        startTime +
+        audioBuffer.duration / this.pitchFactor -
+        this.crossfadeDuration;
 
       gainNode.gain.setValueAtTime(0, startTime);
       gainNode.gain.linearRampToValueAtTime(1, fadeInEnd);
 
-      if (audioBuffer.duration > this.crossfadeDuration * 2) {
+      if (
+        audioBuffer.duration / this.pitchFactor >
+        this.crossfadeDuration * 2
+      ) {
         gainNode.gain.setValueAtTime(1, fadeOutStart);
         gainNode.gain.linearRampToValueAtTime(
           0,
-          startTime + audioBuffer.duration
+          startTime + audioBuffer.duration / this.pitchFactor
         );
       }
 
@@ -600,6 +754,7 @@ class AudioPlayer {
       isMobile: this.isMobile,
       audioUnlocked: this.audioUnlocked,
       requiresUserGesture: this.requiresUserGesture(),
+      pitchFactor: this.pitchFactor,
     };
   }
 }

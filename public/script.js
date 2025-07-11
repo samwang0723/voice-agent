@@ -2,7 +2,7 @@ import createRNNWasmModule from './rnnoise.js';
 import AudioPlayer from './audioPlayer.js';
 
 // OAuth Configuration
-const AGENT_SWARM_API = 'https://50c21f73c5ca.ngrok-free.app/api/v1';
+const AGENT_SWARM_API = 'http://localhost:3030/api/v1';
 const OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/userinfo.email',
@@ -57,17 +57,20 @@ const vadDebugCounters = {
 const statusIndicator = document.getElementById('statusIndicator');
 const statusText = document.getElementById('statusText');
 const googleLoginBtn = document.getElementById('googleLoginBtn');
-
 const clearBtn = document.getElementById('clearBtn');
 const disconnectBtn = document.getElementById('disconnectBtn');
 const connectBtn = document.getElementById('connectBtn');
 const messagesEl = document.getElementById('messages');
 const messagesContainer = document.querySelector('.messages-container');
-const chatModeSelect = document.getElementById('chat-mode-select');
-
-// Mobile audio unlock DOM elements
 const audioUnlockOverlay = document.getElementById('audioUnlockOverlay');
 const unlockAudioBtn = document.getElementById('unlockAudioBtn');
+const unlockTitle = document.getElementById('unlockTitle');
+const unlockDescription = document.getElementById('unlockDescription');
+const chatModeSelect = document.getElementById('chat-mode-select');
+const testAudioBtn = document.getElementById('testAudioBtn');
+const testAudioText = document.getElementById('testAudioText');
+
+// Mobile audio unlock DOM elements
 
 // Streaming support variables
 let activeStreamMsg = {
@@ -147,6 +150,7 @@ async function handleAudioUnlock() {
       hideAudioUnlockOverlay();
       addMessage('Audio enabled successfully', 'system');
       updateStatus(isConnected);
+      updateTestAudioButton(true);
       console.log('Audio unlock successful');
     } else {
       throw new Error('Audio unlock failed');
@@ -161,6 +165,103 @@ async function handleAudioUnlock() {
       error.message.includes('user gesture')
     ) {
       addMessage('Please try tapping the unlock button again', 'system');
+    }
+  }
+}
+
+/**
+ * Test audio playback and unlock if needed
+ */
+async function testAudioPlayback() {
+  try {
+    console.log('Testing audio playback...');
+
+    // Check if already unlocked
+    if (audioPlayer.audioUnlocked) {
+      addMessage('Audio is already enabled ✓', 'system');
+
+      // Play a test tone
+      playTestTone();
+      return;
+    }
+
+    // Try to unlock audio
+    const unlocked = await audioPlayer.unlock();
+
+    if (unlocked) {
+      audioUnlocked = true;
+      hideAudioUnlockOverlay();
+      addMessage('Audio enabled successfully ✓', 'system');
+      updateTestAudioButton(true);
+
+      // Play a test tone
+      playTestTone();
+    } else {
+      throw new Error('Failed to unlock audio');
+    }
+  } catch (error) {
+    console.error('Audio test failed:', error);
+
+    if (
+      error.message.includes('NotAllowedError') ||
+      error.message.includes('user gesture')
+    ) {
+      // This shouldn't happen if called from a click event, but just in case
+      showAudioUnlockOverlay();
+    } else {
+      addMessage(`Audio test failed: ${error.message}`, 'error');
+    }
+  }
+}
+
+/**
+ * Play a simple test tone to verify audio is working
+ */
+function playTestTone() {
+  try {
+    if (!audioPlayer.audioContext) {
+      console.warn('AudioContext not available for test tone');
+      return;
+    }
+
+    const context = audioPlayer.audioContext;
+    const oscillator = context.createOscillator();
+    const gainNode = context.createGain();
+
+    oscillator.connect(gainNode);
+    gainNode.connect(context.destination);
+
+    // Create a pleasant test tone
+    oscillator.frequency.value = 440; // A4 note
+    oscillator.type = 'sine';
+
+    // Fade in and out
+    gainNode.gain.setValueAtTime(0, context.currentTime);
+    gainNode.gain.linearRampToValueAtTime(0.2, context.currentTime + 0.1);
+    gainNode.gain.linearRampToValueAtTime(0, context.currentTime + 0.5);
+
+    oscillator.start(context.currentTime);
+    oscillator.stop(context.currentTime + 0.5);
+
+    addMessage('Test tone played 🔊', 'system');
+  } catch (error) {
+    console.error('Failed to play test tone:', error);
+  }
+}
+
+/**
+ * Update test audio button appearance
+ */
+function updateTestAudioButton(isUnlocked) {
+  if (testAudioBtn && testAudioText) {
+    if (isUnlocked) {
+      testAudioBtn.classList.add('audio-unlocked');
+      testAudioText.textContent = 'Audio Ready';
+      testAudioBtn.title = 'Audio is enabled - click to test';
+    } else {
+      testAudioBtn.classList.remove('audio-unlocked');
+      testAudioText.textContent = 'Test Audio';
+      testAudioBtn.title = 'Test audio playback';
     }
   }
 }
@@ -737,11 +838,9 @@ function connectWebSocket() {
               break;
             }
 
-            // Check if audio unlock is needed on mobile
-            if (isMobileDevice && !audioUnlocked) {
-              console.log(
-                '🎵 Audio unlock required on mobile - showing overlay'
-              );
+            // Check if audio unlock is needed (for any browser, not just mobile)
+            if (!audioUnlocked) {
+              console.log('🎵 Audio unlock required - showing overlay');
               showAudioUnlockOverlay();
               // Audio will be queued by AudioPlayer until unlocked
             }
@@ -761,7 +860,7 @@ function connectWebSocket() {
             } catch (error) {
               console.error('Error routing audio data:', error);
 
-              // Handle mobile audio unlock errors specifically
+              // Handle audio unlock errors specifically
               if (
                 error.message.includes('NotAllowedError') ||
                 error.message.includes('user gesture')
@@ -813,8 +912,8 @@ function connectWebSocket() {
             break;
           }
 
-          // Check if audio unlock is needed on mobile
-          if (isMobileDevice && !audioUnlocked) {
+          // Check if audio unlock is needed (for any browser, not just mobile)
+          if (!audioUnlocked) {
             console.log(
               '🎵 Audio unlock required for streaming - showing overlay'
             );
@@ -1233,10 +1332,9 @@ async function initializeApp() {
   checkBrowserCompatibility();
 
   if (checkSecureContext()) {
-    // Show audio unlock overlay if needed on mobile
-    if (isMobileDevice && !audioUnlocked) {
-      showAudioUnlockOverlay();
-    }
+    // Don't check for mobile anymore - all browsers may need audio unlock
+    // The AudioPlayer will trigger the overlay when needed via onAutoplayBlocked callback
+    console.log('Audio unlock status:', audioUnlocked);
 
     // Set initial config on the backend, then initialize VAD and connect
     await initializeVAD();
@@ -1288,6 +1386,11 @@ function setupEventListeners() {
     });
   }
 
+  // Add test audio button event listener
+  if (testAudioBtn) {
+    testAudioBtn.addEventListener('click', testAudioPlayback);
+  }
+
   // Add event listeners for engine selection changes
   const sttEngineSelect = document.getElementById('stt-engine-select');
   const ttsEngineSelect = document.getElementById('tts-engine-select');
@@ -1334,6 +1437,13 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   setupAudioPlayerCallbacks();
   setupEventListeners();
+
+  // Check initial audio status and update UI
+  if (audioPlayer && audioPlayer.audioUnlocked) {
+    audioUnlocked = true;
+    updateTestAudioButton(true);
+  }
+
   await bootstrapAuth();
 });
 
@@ -1376,6 +1486,7 @@ function setupAudioPlayerCallbacks() {
       audioUnlocked = true;
       hideAudioUnlockOverlay();
       updateStatus(isConnected);
+      updateTestAudioButton(true);
     }
   };
 
@@ -1397,6 +1508,23 @@ function setupAudioPlayerCallbacks() {
     speakingMessages.forEach((msg) => {
       msg.classList.remove('speaking');
     });
+  };
+
+  // Set up callback for autoplay blocking
+  audioPlayer.onAutoplayBlocked = () => {
+    console.log('AudioPlayer: Autoplay was blocked - showing unlock overlay');
+
+    // Show audio unlock overlay regardless of device type
+    if (!audioUnlocked) {
+      showAudioUnlockOverlay();
+
+      // Update the overlay text for desktop users
+      if (!isMobileDevice && unlockTitle && unlockDescription) {
+        unlockTitle.textContent = 'Enable Audio Playback';
+        unlockDescription.textContent =
+          'Your browser requires permission to play audio. Click the button below to enable voice chat.';
+      }
+    }
   };
 }
 

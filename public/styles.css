@@ -544,3 +544,49 @@ body {
   border: 1px solid #ccc;
   background-color: #fff;
 }
+
+/* Test Audio Button */
+.test-audio-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  background-color: #fff;
+  color: #333;
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+  font-weight: 500;
+}
+
+.test-audio-btn:hover {
+  background-color: #f5f5f5;
+  border-color: #999;
+  transform: translateY(-1px);
+}
+
+.test-audio-btn:active {
+  transform: translateY(0);
+}
+
+.test-audio-btn .btn-icon {
+  width: 16px;
+  height: 16px;
+  fill: #666;
+}
+
+.test-audio-btn.audio-unlocked {
+  border-color: #51cf66;
+  background-color: rgba(81, 207, 102, 0.1);
+  color: #4caf50;
+}
+
+.test-audio-btn.audio-unlocked .btn-icon {
+  fill: #51cf66;
+}
+
+.test-audio-btn.audio-unlocked:hover {
+  background-color: rgba(81, 207, 102, 0.2);
+}
