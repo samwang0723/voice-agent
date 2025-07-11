@@ -2,7 +2,7 @@ import createRNNWasmModule from './rnnoise.js';
 import AudioPlayer from './audioPlayer.js';
 
 // OAuth Configuration
-const AGENT_SWARM_API = 'http://localhost:3030/api/v1';
+const AGENT_SWARM_API = 'https://50c21f73c5ca.ngrok-free.app/api/v1';
 const OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/userinfo.email',
@@ -62,10 +62,6 @@ const disconnectBtn = document.getElementById('disconnectBtn');
 const connectBtn = document.getElementById('connectBtn');
 const messagesEl = document.getElementById('messages');
 const messagesContainer = document.querySelector('.messages-container');
-const audioUnlockOverlay = document.getElementById('audioUnlockOverlay');
-const unlockAudioBtn = document.getElementById('unlockAudioBtn');
-const unlockTitle = document.getElementById('unlockTitle');
-const unlockDescription = document.getElementById('unlockDescription');
 const chatModeSelect = document.getElementById('chat-mode-select');
 const testAudioBtn = document.getElementById('testAudioBtn');
 const testAudioText = document.getElementById('testAudioText');
@@ -114,58 +110,23 @@ function detectMobileBrowser() {
 }
 
 /**
- * Show the audio unlock overlay for mobile users
+ * Automatically unlock audio
  */
-function showAudioUnlockOverlay() {
-  if (audioUnlockOverlay) {
-    audioUnlockOverlay.classList.remove('hidden');
-    console.log('Audio unlock overlay shown');
-    addMessage('Tap to enable audio playback', 'system');
-  }
-}
-
-/**
- * Hide the audio unlock overlay
- */
-function hideAudioUnlockOverlay() {
-  if (audioUnlockOverlay) {
-    audioUnlockOverlay.classList.add('hidden');
-    console.log('Audio unlock overlay hidden');
-  }
-}
-
-/**
- * Handle audio unlock user interaction
- * Must be called synchronously within user gesture event
- */
-async function handleAudioUnlock() {
+async function autoUnlockAudio() {
+  console.log('Auto-unlocking audio...');
+  // Automatically unlock audio without user interaction
   try {
-    console.log('Attempting to unlock audio...');
-
-    // Call audioPlayer.unlock() synchronously within user gesture
-    const unlockSuccess = await audioPlayer.unlock();
-
-    if (unlockSuccess) {
+    const unlocked = await audioPlayer.unlock();
+    if (unlocked) {
       audioUnlocked = true;
-      hideAudioUnlockOverlay();
-      addMessage('Audio enabled successfully', 'system');
+      console.log('Audio auto-unlocked successfully');
+      addMessage('Audio enabled automatically', 'system');
       updateStatus(isConnected);
       updateTestAudioButton(true);
-      console.log('Audio unlock successful');
-    } else {
-      throw new Error('Audio unlock failed');
     }
   } catch (error) {
-    console.error('Audio unlock failed:', error);
-    addMessage(`Failed to enable audio: ${error.message}`, 'error');
-
-    // Show user-friendly error message
-    if (
-      error.message.includes('NotAllowedError') ||
-      error.message.includes('user gesture')
-    ) {
-      addMessage('Please try tapping the unlock button again', 'system');
-    }
+    console.log('Audio auto-unlock failed:', error);
+    // Silently fail - browser may require user gesture
   }
 }
 
@@ -190,7 +151,6 @@ async function testAudioPlayback() {
 
     if (unlocked) {
       audioUnlocked = true;
-      hideAudioUnlockOverlay();
       addMessage('Audio enabled successfully ✓', 'system');
       updateTestAudioButton(true);
 
@@ -202,15 +162,7 @@ async function testAudioPlayback() {
   } catch (error) {
     console.error('Audio test failed:', error);
 
-    if (
-      error.message.includes('NotAllowedError') ||
-      error.message.includes('user gesture')
-    ) {
-      // This shouldn't happen if called from a click event, but just in case
-      showAudioUnlockOverlay();
-    } else {
-      addMessage(`Audio test failed: ${error.message}`, 'error');
-    }
+    addMessage(`Audio test failed: ${error.message}`, 'error');
   }
 }
 
@@ -696,21 +648,11 @@ function updateStatus(connected) {
   const tokenData = getStoredToken();
   const isAuthenticated = tokenData && tokenData.access_token;
 
-  // Check if audio unlock is needed on mobile
-  const needsAudioUnlock = isMobileDevice && !audioUnlocked;
-
   if (connected && isVadReady) {
     statusIndicator.className = 'status-indicator connected';
-
-    if (needsAudioUnlock) {
-      statusText.textContent = isAuthenticated
-        ? 'Ready to listen - Tap to enable audio (Authenticated)'
-        : 'Ready to listen - Tap to enable audio (Guest)';
-    } else {
-      statusText.textContent = isAuthenticated
-        ? 'Ready to listen (Authenticated)'
-        : 'Ready to listen (Guest)';
-    }
+    statusText.textContent = isAuthenticated
+      ? 'Ready to listen (Authenticated)'
+      : 'Ready to listen (Guest)';
 
     appContainer.classList.add('is-animating');
 
@@ -840,8 +782,8 @@ function connectWebSocket() {
 
             // Check if audio unlock is needed (for any browser, not just mobile)
             if (!audioUnlocked) {
-              console.log('🎵 Audio unlock required - showing overlay');
-              showAudioUnlockOverlay();
+              console.log('🎵 Audio unlock required');
+              autoUnlockAudio();
               // Audio will be queued by AudioPlayer until unlocked
             }
 
@@ -865,10 +807,8 @@ function connectWebSocket() {
                 error.message.includes('NotAllowedError') ||
                 error.message.includes('user gesture')
               ) {
-                console.log(
-                  '🎵 Audio requires user gesture - showing unlock overlay'
-                );
-                showAudioUnlockOverlay();
+                console.log('🎵 Audio requires user gesture');
+                autoUnlockAudio();
               } else {
                 // Fallback to original method on other errors
                 audioPlayer.enqueue(data.speechAudio);
@@ -914,10 +854,8 @@ function connectWebSocket() {
 
           // Check if audio unlock is needed (for any browser, not just mobile)
           if (!audioUnlocked) {
-            console.log(
-              '🎵 Audio unlock required for streaming - showing overlay'
-            );
-            showAudioUnlockOverlay();
+            console.log('🎵 Audio unlock required for streaming');
+            autoUnlockAudio();
             // Audio will be queued by AudioPlayer until unlocked
           }
 
@@ -1333,7 +1271,6 @@ async function initializeApp() {
 
   if (checkSecureContext()) {
     // Don't check for mobile anymore - all browsers may need audio unlock
-    // The AudioPlayer will trigger the overlay when needed via onAutoplayBlocked callback
     console.log('Audio unlock status:', audioUnlocked);
 
     // Set initial config on the backend, then initialize VAD and connect
@@ -1359,30 +1296,6 @@ function setupEventListeners() {
         return;
       }
       loginWithGoogle();
-    });
-  }
-
-  // Add audio unlock button event listener
-  if (unlockAudioBtn) {
-    unlockAudioBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      handleAudioUnlock();
-    });
-
-    // Also handle touch events for better mobile support
-    unlockAudioBtn.addEventListener('touchend', (e) => {
-      e.preventDefault();
-      handleAudioUnlock();
-    });
-  }
-
-  // Add overlay click handler (clicking outside content should also unlock)
-  if (audioUnlockOverlay) {
-    audioUnlockOverlay.addEventListener('click', (e) => {
-      // Only handle clicks on the overlay itself, not its children
-      if (e.target === audioUnlockOverlay) {
-        handleAudioUnlock();
-      }
     });
   }
 
@@ -1512,18 +1425,11 @@ function setupAudioPlayerCallbacks() {
 
   // Set up callback for autoplay blocking
   audioPlayer.onAutoplayBlocked = () => {
-    console.log('AudioPlayer: Autoplay was blocked - showing unlock overlay');
+    console.log('AudioPlayer: Autoplay was blocked - attempting auto-unlock');
 
-    // Show audio unlock overlay regardless of device type
+    // Attempt to automatically unlock audio
     if (!audioUnlocked) {
-      showAudioUnlockOverlay();
-
-      // Update the overlay text for desktop users
-      if (!isMobileDevice && unlockTitle && unlockDescription) {
-        unlockTitle.textContent = 'Enable Audio Playback';
-        unlockDescription.textContent =
-          'Your browser requires permission to play audio. Click the button below to enable voice chat.';
-      }
+      autoUnlockAudio(); // This now automatically unlocks
     }
   };
 }
