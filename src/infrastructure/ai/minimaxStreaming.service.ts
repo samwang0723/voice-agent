@@ -270,7 +270,7 @@ export class MinimaxStreamingTextToSpeechService
             const audioBuffer = this.hexToBuffer(hexAudio);
             totalAudioBytesReceived += audioBuffer.length;
 
-            logger.info(
+            logger.debug(
               `Audio message #${audioMessageCount}: ${audioBuffer.length} bytes (hex: ${hexAudio.length} chars, total received: ${totalAudioBytesReceived} bytes)`
             );
 

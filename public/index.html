@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover"
+    />
     <title>Zen Voice Interface</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -72,6 +75,8 @@
         --glow-color-dim: rgba(0, 229, 255, 0.5);
         --bg-color: #030814;
         --line-color: rgba(0, 229, 255, 0.2);
+        /* Dynamic viewport height for mobile browsers */
+        --viewport-height: 100vh;
       }
       /* Custom font face for Avengeance */
       @font-face {
@@ -88,6 +93,25 @@
         color: var(--glow-color);
         overflow: hidden;
         text-shadow: 0 0 5px var(--glow-color-dim);
+        /* Use dynamic viewport height for better mobile support */
+        height: var(--viewport-height);
+        min-height: var(--viewport-height);
+      }
+
+      /* Fallback for browsers that don't support dvh */
+      @supports not (height: 100dvh) {
+        body {
+          height: 100vh;
+          min-height: 100vh;
+        }
+      }
+
+      /* Use dynamic viewport height where supported */
+      @supports (height: 100dvh) {
+        body {
+          height: 100dvh;
+          min-height: 100dvh;
+        }
       }
 
       /* Apply Avengeance font to J.A.R.V.I.S. heading */
@@ -100,11 +124,25 @@
       .screen {
         display: flex;
         flex-direction: column;
-        height: 100vh;
+        height: var(--viewport-height);
         width: 100vw;
         padding: 1rem;
         box-sizing: border-box;
         transition: opacity 0.7s ease-in-out;
+      }
+
+      /* Fallback for browsers that don't support dvh */
+      @supports not (height: 100dvh) {
+        .screen {
+          height: 100vh;
+        }
+      }
+
+      /* Use dynamic viewport height where supported */
+      @supports (height: 100dvh) {
+        .screen {
+          height: 100dvh;
+        }
       }
 
       .hud-element {
@@ -327,10 +365,62 @@
         background-size: 1.25em;
         padding-right: 2.5rem; /* Add padding to the right */
       }
+
+      /* Mobile browser safe area support */
+      @supports (padding-bottom: env(safe-area-inset-bottom)) {
+        .mobile-safe-bottom {
+          padding-bottom: env(safe-area-inset-bottom);
+        }
+      }
+
+      /* Additional mobile browser compatibility */
+      @media screen and (max-width: 768px) {
+        .mobile-bottom-bar {
+          /* Fallback for browsers that don't support safe-area-inset-bottom */
+          padding-bottom: max(1rem, env(safe-area-inset-bottom, 1rem));
+          /* Account for various mobile browser UI heights */
+          bottom: max(0px, env(safe-area-inset-bottom, 0px));
+        }
+      }
+
+      /* iOS Safari specific adjustments */
+      @media screen and (max-width: 768px) and (-webkit-min-device-pixel-ratio: 2) {
+        .mobile-bottom-bar {
+          /* iOS Safari home indicator space */
+          padding-bottom: max(1.5rem, env(safe-area-inset-bottom, 1.5rem));
+        }
+      }
+
+      /* Prevent scrolling issues */
+      html,
+      body {
+        overflow: hidden;
+        margin: 0;
+        padding: 0;
+      }
+
+      html {
+        height: var(--viewport-height);
+      }
+
+      /* Fallback for browsers that don't support dvh */
+      @supports not (height: 100dvh) {
+        html {
+          height: 100vh;
+        }
+      }
+
+      /* Use dynamic viewport height where supported */
+      @supports (height: 100dvh) {
+        html {
+          height: 100dvh;
+        }
+      }
     </style>
   </head>
   <body
-    class="flex flex-col items-center justify-center h-screen w-screen select-none"
+    class="flex flex-col items-center justify-center w-screen select-none"
+    style="height: var(--viewport-height); min-height: var(--viewport-height)"
   >
     <div
       id="login-screen"
@@ -529,7 +619,7 @@ l13 35 178 5 179 5 38 108 37 107 -362 0 -363 0 -133 -407z"
       </div>
 
       <div
-        class="w-full flex justify-between items-center p-4 absolute bottom-0"
+        class="w-full flex justify-between items-center p-4 absolute bottom-0 mobile-bottom-bar"
       >
         <button
           id="logout-button"
@@ -819,5 +909,47 @@ l13 35 178 5 179 5 38 108 37 107 -362 0 -363 0 -133 -407z"
     <script type="module" src="./vad.js"></script>
     <script type="module" src="./ui.js"></script>
     <script type="module" src="./zenApp.js"></script>
+
+    <!-- Dynamic Viewport Height Handler -->
+    <script>
+      // Handle dynamic viewport height for mobile browsers
+      function setViewportHeight() {
+        // Get the actual viewport height
+        const vh = window.innerHeight;
+        // Set the CSS custom property
+        document.documentElement.style.setProperty(
+          '--viewport-height',
+          `${vh}px`
+        );
+      }
+
+      // Set initial height
+      setViewportHeight();
+
+      // Handle viewport changes (orientation, browser UI showing/hiding)
+      window.addEventListener('resize', setViewportHeight);
+      window.addEventListener('orientationchange', () => {
+        // Delay to ensure the viewport has changed
+        setTimeout(setViewportHeight, 100);
+      });
+
+      // Handle mobile browser UI changes (address bar, nav bar)
+      let ticking = false;
+      function handleScroll() {
+        if (!ticking) {
+          requestAnimationFrame(() => {
+            setViewportHeight();
+            ticking = false;
+          });
+          ticking = true;
+        }
+      }
+      window.addEventListener('scroll', handleScroll, { passive: true });
+
+      // Handle visual viewport changes (newer browsers)
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener('resize', setViewportHeight);
+      }
+    </script>
   </body>
 </html>
