@@ -83,6 +83,11 @@ AZURE_SPEECH_API_KEY="YOUR_AZURE_SPEECH_API_KEY"
 AZURE_SPEECH_REGION="YOUR_AZURE_REGION"  # e.g., "eastus", "westus2", "centralus"
 AZURE_TTS_VOICE_ID="en-GB-OllieMultilingualNeural"  # Optional: defaults to en-GB-OllieMultilingualNeural
 
+# Minimax TTS Configuration
+MINIMAX_API_KEY="YOUR_MINIMAX_API_KEY"
+MINIMAX_TTS_MODEL="speech-02-hd"  # Optional: defaults to speech-02-hd
+MINIMAX_VOICE_ID="Wise_Woman"     # Optional: defaults to Wise_Woman
+
 # Optional: Specify the LLM model to use (defaults to 'gemini-1.5-flash')
 # Other options: 'claude-3-haiku', 'gpt-4o' (ensure corresponding API keys are set)
 # LLM_MODEL="gemini-1.5-flash"
@@ -97,6 +102,17 @@ bun dev
 ```
 
 The server will be running at `http://localhost:3000`. You can open `public/index.html` in your browser to interact with the voice agent.
+
+## Supported TTS Providers
+
+The voice agent supports multiple Text-to-Speech (TTS) providers, each with different characteristics:
+
+- **Groq**: Fast TTS with good quality, supports streaming and single-shot modes
+- **Azure Speech Service**: High-quality TTS with extensive voice options, supports streaming and single-shot modes
+- **ElevenLabs**: Premium voice synthesis with natural-sounding voices, supports streaming and single-shot modes
+- **Minimax**: Chinese TTS provider with high-quality voice synthesis, supports both streaming and single-shot modes
+  - **Note**: Minimax outputs MP3 format, which may have compatibility considerations for streaming playback compared to PCM-based providers
+  - Requires `MINIMAX_API_KEY`, optional `MINIMAX_TTS_MODEL` (defaults to 'speech-02-hd'), and optional `MINIMAX_VOICE_ID` (defaults to 'Wise_Woman')
 
 ## Audio & Noise Troubleshooting
 

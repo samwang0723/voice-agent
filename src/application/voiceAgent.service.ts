@@ -17,6 +17,7 @@ import { AgentSwarmService } from '../infrastructure/ai/agentSwarm.service';
 const streamProviderMap: Record<string, string> = {
   azure: 'azure-stream',
   elevenlabs: 'elevenlabs-stream',
+  minimax: 'minimax-stream',
 };
 
 export class VoiceAgentService {

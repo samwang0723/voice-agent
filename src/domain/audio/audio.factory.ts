@@ -17,6 +17,7 @@ import {
 } from '../../infrastructure/ai/azure.service';
 import { AzureStreamingTextToSpeechService } from '../../infrastructure/ai/azureStreaming.service';
 import { ElevenLabsStreamingTextToSpeechService } from '../../infrastructure/ai/elevenlabsStreaming.service';
+import { MinimaxStreamingTextToSpeechService } from '../../infrastructure/ai/minimaxStreaming.service';
 import type {
   ITranscriptionService,
   ITextToSpeechService,
@@ -42,6 +43,7 @@ const ttsServices: Record<string, ITextToSpeechService> = {
 const streamingTtsServices: Record<string, IStreamingTextToSpeechService> = {
   'azure-stream': new AzureStreamingTextToSpeechService(),
   'elevenlabs-stream': new ElevenLabsStreamingTextToSpeechService(),
+  'minimax-stream': new MinimaxStreamingTextToSpeechService(),
 };
 
 export function getTranscriptionService(

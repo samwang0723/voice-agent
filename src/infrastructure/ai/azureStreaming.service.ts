@@ -171,7 +171,7 @@ export class AzureStreamingTextToSpeechService
 
           logger.debug('Azure Streaming TTS calling speakTextAsync...');
           synthesizer.speakTextAsync(
-            text,
+            text.replace(/\s+/g, ' ').trim(),
             (result) => {
               logger.debug(
                 `Azure Streaming TTS synthesis callback - reason: ${result.reason}, audioData length: ${result.audioData ? result.audioData.byteLength : 'null'}`

@@ -180,7 +180,7 @@ export class ElevenLabsStreamingTextToSpeechService
       const audioStream = await elevenLabsClient.textToSpeech.convertAsStream(
         config.voiceId!,
         {
-          text,
+          text: text.replace(/\s+/g, ' ').trim(),
           model_id: config.modelName || 'eleven_multilingual_v2',
           output_format: 'pcm_16000',
           voice_settings: {

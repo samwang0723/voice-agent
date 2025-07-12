@@ -11,7 +11,8 @@ export type ModelProvider =
   | 'cartesia'
   | 'deepgram'
   | 'elevenlabs'
-  | 'azure';
+  | 'azure'
+  | 'minimax';
 
 export interface ModelConfig {
   provider: ModelProvider;
@@ -64,6 +65,7 @@ export const transcriptionConfigs: Record<string, TranscriptionConfig> = {
 
 export interface TextToSpeechConfig extends ModelConfig {
   voiceId?: string;
+  groupId?: string; // Add Group ID for MiniMax
 }
 
 // Text-to-Speech Model Configurations
@@ -95,6 +97,14 @@ export const ttsConfigs: Record<string, TextToSpeechConfig> = {
     modelName: 'azure-tts',
     apiKey: process.env.AZURE_SPEECH_API_KEY,
     voiceId: process.env.AZURE_TTS_VOICE_ID || 'en-GB-OllieMultilingualNeural',
+  },
+  minimax: {
+    provider: 'minimax',
+    modelName: process.env.MINIMAX_TTS_MODEL || 'speech-02-hd',
+    apiKey: process.env.MINIMAX_API_KEY,
+    voiceId: process.env.MINIMAX_VOICE_ID,
+    groupId: process.env.MINIMAX_GROUP_ID,
+    baseURL: 'https://api.minimaxi.chat',
   },
 };
 
