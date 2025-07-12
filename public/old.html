@@ -11,10 +11,6 @@
       href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&display=swap"
       rel="stylesheet"
     />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&display=swap"
-      rel="stylesheet"
-    />
     <style>
       /* latin-ext */
       @font-face {
@@ -66,62 +62,15 @@
           U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
           U+FEFF, U+FFFD;
       }
-
-      :root {
-        --glow-color: #00e5ff;
-        --glow-color-dim: rgba(0, 229, 255, 0.5);
-        --bg-color: #030814;
-        --line-color: rgba(0, 229, 255, 0.2);
-      }
-      /* Custom font face for Avengeance */
-      @font-face {
-        font-family: 'Avengeance';
-        src: url('./Avengeance.otf') format('opentype');
-        font-weight: normal;
-        font-style: normal;
-        font-display: swap;
-      }
-
       body {
-        font-family: 'Orbitron', sans-serif;
-        background-color: var(--bg-color);
-        color: var(--glow-color);
+        font-family: 'Google Sans', 'Inter', sans-serif;
+        background-color: #121212;
+        color: #e0e0e0;
         overflow: hidden;
-        text-shadow: 0 0 5px var(--glow-color-dim);
-      }
-
-      /* Apply Avengeance font to J.A.R.V.I.S. heading */
-      .jarvis-title {
-        font-family: 'Avengeance', 'Orbitron', sans-serif;
-        font-weight: 400;
-        letter-spacing: 0.1em;
       }
 
       .screen {
-        display: flex;
-        flex-direction: column;
-        height: 100vh;
-        width: 100vw;
-        padding: 1rem;
-        box-sizing: border-box;
         transition: opacity 0.7s ease-in-out;
-      }
-
-      .hud-element {
-        border: 1px solid var(--line-color);
-        box-shadow: 0 0 10px var(--line-color) inset;
-      }
-
-      /* Header */
-      #header-bar {
-        width: 100%;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        flex-shrink: 0;
-        font-size: 0.75rem;
-        opacity: 0.7;
-        padding-bottom: 0.5rem;
       }
 
       /* --- Main Screen Transition --- */
@@ -139,10 +88,6 @@
         pointer-events: none; /* Prevents clicking on the background orb */
       }
 
-      #google-login-button {
-        font-family: 'Google Sans', sans-serif;
-      }
-
       /* --- The Pond/Orb Animation --- */
       .orb-container {
         position: relative;
@@ -156,54 +101,49 @@
       .orb {
         position: absolute;
         border-radius: 50%;
-        border: 1px solid var(--line-color);
-        animation: rotate 20s linear infinite;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        animation-duration: 3s;
+        animation-iteration-count: infinite;
+        animation-timing-function: ease-in-out;
       }
 
       .orb-1 {
-        width: 120px;
-        height: 120px;
-        border-style: dashed;
-        animation-duration: 30s;
-      }
-      .orb-2 {
         width: 100px;
         height: 100px;
-        animation-direction: reverse;
+        animation-name: breathe;
+        animation-delay: 0s;
       }
+
+      .orb-2 {
+        width: 150px;
+        height: 150px;
+        animation-name: breathe;
+        animation-delay: 0.5s;
+      }
+
       .orb-3 {
-        width: 80px;
-        height: 80px;
-        border-style: dotted;
-        animation-duration: 15s;
-      }
-      .orb-4 {
-        width: 60px;
-        height: 60px;
-        border: 2px solid var(--glow-color);
-        box-shadow: 0 0 10px var(--glow-color);
-        animation-duration: 10s;
-        animation-direction: reverse;
+        width: 200px;
+        height: 200px;
+        animation-name: breathe;
+        animation-delay: 1s;
       }
 
       .orb-center {
         width: 60px;
         height: 60px;
-        background: radial-gradient(
-          circle,
-          rgba(0, 0, 0, 0) 0%,
-          var(--line-color) 100%
-        );
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
         border-radius: 50%;
         cursor: pointer;
-        transition: all 0.5s ease;
+        transition: all 0.3s ease;
         display: flex;
         justify-content: center;
         align-items: center;
         z-index: 10;
-        touch-action: none;
       }
+
       .orb-center:hover {
+        background: rgba(255, 255, 255, 0.1);
         transform: scale(1.1);
       }
 
@@ -211,12 +151,15 @@
         transition: opacity 0.3s ease;
       }
 
-      @keyframes rotate {
-        from {
-          transform: rotate(0deg);
+      @keyframes breathe {
+        0%,
+        100% {
+          transform: scale(0.8);
+          opacity: 0.2;
         }
-        to {
-          transform: rotate(360deg);
+        50% {
+          transform: scale(1);
+          opacity: 0.5;
         }
       }
 
@@ -255,20 +198,18 @@
 
       /* --- Transcript --- */
       .transcript-container {
-        border-left: 1px solid var(--line-color);
-        border-right: 1px solid var(--line-color);
         -webkit-mask-image: linear-gradient(
           to bottom,
           transparent 0%,
-          black 10%,
-          black 90%,
+          black 5%,
+          black 95%,
           transparent 100%
         );
         mask-image: linear-gradient(
           to bottom,
           transparent 0%,
-          black 10%,
-          black 90%,
+          black 5%,
+          black 95%,
           transparent 100%
         );
       }
@@ -277,17 +218,9 @@
         animation: fadeIn 0.5s forwards;
       }
       .user-text {
-        font-family: 'Google Sans', sans-serif;
-        color: var(--glow-color-dim);
-      }
-      .agent {
-        font-family: 'Google Sans', sans-serif;
-        color: var(--glow-color);
+        color: rgba(255, 255, 255, 0.6);
       }
       @keyframes fadeIn {
-        from {
-          opacity: 0;
-        }
         to {
           opacity: 1;
         }
@@ -295,7 +228,6 @@
 
       /* --- Settings Panel --- */
       .settings-panel {
-        font-family: 'Google Sans', sans-serif;
         background: rgba(28, 28, 30, 0.8);
         backdrop-filter: blur(15px) saturate(180%);
         -webkit-backdrop-filter: blur(15px) saturate(180%);
@@ -314,7 +246,6 @@
         border-radius: 2px;
       }
       .settings-row {
-        font-family: 'Google Sans', sans-serif;
         font-size: 0.9rem; /* Adjust this value as needed */
       }
       select {
@@ -336,114 +267,8 @@
       id="login-screen"
       class="screen absolute inset-0 flex flex-col items-center justify-center text-center p-8 opacity-100"
     >
-      <h1 class="jarvis-title text-6xl font-regular text-cyan-400 mb-2">
-        j.a.r.v.i.s.
-      </h1>
-      <p class="text-white mb-12 ml-12 mr-12 w-60">
-        <svg
-          version="1.0"
-          xmlns="http://www.w3.org/2000/svg"
-          viewBox="0 0 1561.000000 201.000000"
-          preserveAspectRatio="xMidYMid meet"
-          style="width: 60vw; height: auto; max-width: 100%"
-        >
-          <g
-            transform="translate(0.000000,201.000000) scale(0.100000,-0.100000)"
-            fill="#FFFFFF"
-            stroke="none"
-          >
-            <path
-              d="M14780 1989 c-646 -8 -1442 -18 -4920 -59 -1367 -16 -2870 -34 -3340
--40 -470 -6 -1996 -24 -3390 -40 -1394 -17 -2569 -31 -2610 -33 -74 -2 -75 -2
--78 -29 l-3 -28 7102 -2 7102 -3 -1151 -864 c-634 -475 -1152 -867 -1152 -872
-0 -5 7 -9 16 -9 21 0 3244 1969 3244 1981 0 5 -57 8 -127 7 -71 -1 -382 -5
--693 -9z"
-            />
-            <path
-              d="M448 1494 c-163 -39 -278 -160 -278 -292 0 -89 78 -173 193 -206 51
--15 87 -41 87 -63 0 -39 -200 -50 -319 -19 -45 12 -66 14 -71 6 -11 -17 -42
--198 -36 -208 9 -15 114 -41 208 -51 242 -27 474 60 539 204 52 114 -11 229
--165 300 -85 40 -115 67 -96 90 26 31 90 38 335 36 131 -1 240 -3 242 -5 1 -1
--42 -139 -97 -307 -55 -167 -100 -305 -100 -306 0 -2 82 -3 183 -3 l183 0 100
-308 100 307 140 3 141 3 33 97 c18 53 35 103 38 110 7 19 -1280 16 -1360 -4z"
-            />
-            <path
-              d="M1699 1103 c-184 -223 -338 -412 -342 -420 -7 -11 26 -13 180 -13
-l188 1 45 64 45 65 165 -2 165 -3 3 -62 3 -63 347 0 347 0 56 167 c33 99 62
-171 72 177 27 17 68 -12 94 -64 22 -46 53 -190 53 -247 l0 -33 171 0 172 0 -7
-86 c-8 100 -35 194 -71 246 -14 20 -25 41 -25 47 0 5 20 21 43 34 48 28 108
-90 131 134 51 100 15 211 -88 266 -39 21 -53 22 -366 25 l-325 3 -130 -397
-c-72 -219 -131 -391 -132 -383 -4 21 -93 761 -93 771 0 4 -82 8 -183 8 l-183
-0 -335 -407z m1486 222 c14 -13 25 -33 25 -44 0 -27 -48 -81 -87 -97 -28 -12
--113 -20 -113 -11 0 3 44 136 55 165 3 7 23 12 50 12 35 0 52 -6 70 -25z
-m-1050 -343 c-1 -1 -44 -1 -94 0 l-92 3 88 122 88 122 6 -122 c4 -67 5 -123 4
--125z"
-            />
-            <path
-              d="M3712 1388 c-23 -68 -84 -254 -136 -415 -53 -160 -96 -294 -96 -298
-0 -3 82 -4 182 -3 l181 3 51 153 51 153 82 -153 81 -153 206 -3 c113 -1 206 0
-206 4 0 3 -42 85 -94 182 -51 97 -101 191 -110 209 l-16 32 217 177 c120 98
-233 190 251 206 l33 28 -178 0 -178 0 -219 -180 c-121 -99 -221 -178 -223
--177 -1 2 24 83 56 180 l60 177 -184 0 -183 0 -40 -122z"
-            />
-            <path
-              d="M5082 1105 c-73 -223 -135 -412 -138 -420 -5 -13 20 -15 178 -15
-l184 0 132 405 c73 222 135 411 138 420 5 13 -16 15 -178 15 l-184 0 -132
--405z"
-            />
-            <path
-              d="M5502 1105 c-73 -223 -135 -412 -138 -420 -5 -13 20 -15 178 -15
-l185 0 52 168 c29 92 56 170 60 174 3 3 55 -72 116 -168 l110 -174 182 0 182
-0 136 413 c74 227 135 416 135 420 0 4 -82 6 -182 5 l-182 -3 -59 -183 -59
--184 -63 92 c-35 50 -91 134 -125 186 l-63 94 -166 0 -167 0 -132 -405z"
-            />
-            <path
-              d="M6785 1498 c-21 -58 -265 -813 -265 -820 0 -6 120 -8 318 -6 350 5
-360 6 497 76 99 49 200 152 250 256 35 70 40 88 43 172 4 90 3 98 -27 159 -36
-72 -84 116 -164 148 -48 20 -74 22 -350 25 -239 3 -298 1 -302 -10z m446 -234
-c39 -20 63 -75 54 -123 -17 -89 -92 -183 -179 -222 -39 -18 -146 -27 -146 -12
-0 5 77 245 115 361 6 18 119 16 156 -4z"
-            />
-            <path
-              d="M7787 1503 c-3 -5 -39 -115 -81 -246 -66 -206 -76 -246 -76 -310 0
--88 21 -138 77 -188 22 -20 67 -47 99 -60 53 -21 74 -23 214 -23 109 0 175 6
-223 17 154 38 261 122 334 263 30 58 203 527 203 551 0 2 -82 3 -183 3 l-182
-0 -78 -234 c-82 -246 -114 -310 -172 -346 -38 -24 -107 -29 -130 -10 -24 20
--35 76 -25 133 5 29 38 140 74 247 37 107 66 198 66 202 0 10 -357 10 -363 1z"
-            />
-            <path
-              d="M8990 1492 c-168 -44 -270 -154 -270 -292 0 -89 63 -160 177 -199 37
--13 77 -32 88 -43 20 -19 20 -19 -2 -38 -44 -35 -172 -37 -307 -4 -33 8 -63
-11 -66 7 -4 -5 -15 -48 -24 -97 -10 -48 -20 -94 -23 -101 -7 -19 106 -52 216
--65 206 -23 401 34 500 146 68 77 77 163 24 241 -34 50 -61 71 -161 124 -48
-25 -88 53 -90 62 -5 25 39 46 114 56 84 10 464 2 464 -10 0 -5 -43 -139 -95
--297 -52 -159 -95 -294 -95 -301 0 -8 52 -11 180 -11 l179 0 101 310 101 310
-138 0 138 0 33 98 c18 53 35 103 38 110 3 9 -130 12 -644 11 -578 0 -656 -2
--714 -17z"
-            />
-            <path
-              d="M10341 1418 c-16 -51 -77 -238 -135 -416 -58 -178 -106 -325 -106
--328 0 -2 82 -3 182 -2 l182 3 56 170 c40 120 61 171 73 173 51 10 97 -70 122
--212 8 -49 15 -99 15 -112 l0 -24 345 0 344 0 136 413 c74 227 135 416 135
-420 0 4 -82 6 -182 5 l-181 -3 -126 -386 c-69 -213 -129 -385 -132 -383 -3 2
--9 32 -12 68 -7 78 -37 167 -73 213 -14 19 -24 36 -23 37 2 2 24 16 49 31 65
-40 99 74 127 128 45 89 27 190 -43 243 -64 49 -103 54 -425 54 l-297 0 -31
--92z m434 -78 c54 -21 49 -91 -12 -137 -39 -30 -140 -47 -131 -22 3 8 13 41
-23 74 9 33 21 68 26 78 11 19 53 23 94 7z"
-            />
-            <path
-              d="M11611 1103 c-74 -225 -136 -414 -138 -420 -4 -10 117 -13 583 -13
-556 0 594 1 673 20 159 38 260 102 305 192 34 68 34 127 1 183 -25 43 -54 62
--187 119 -73 31 -88 57 -54 91 34 34 89 33 200 -5 62 -21 88 -26 91 -17 2 7
-20 56 39 109 l35 98 -52 15 c-187 54 -387 46 -518 -20 -96 -49 -158 -123 -174
--208 -6 -29 -2 -49 20 -92 32 -66 76 -104 171 -151 76 -36 103 -59 88 -73 -33
--30 -87 -35 -433 -39 -313 -3 -353 -2 -348 12 3 8 11 33 17 55 l11 41 162 0
-163 0 27 85 c15 47 27 90 27 95 0 6 -60 10 -155 10 -169 0 -163 -2 -141 60
-l13 35 178 5 179 5 38 108 37 107 -362 0 -363 0 -133 -407z"
-            />
-          </g>
-        </svg>
-      </p>
+      <h1 class="text-4xl font-light text-white mb-2">Zen AI</h1>
+      <p class="text-lg text-gray-400 mb-12">A calm space for conversation</p>
       <button
         id="google-login-button"
         class="bg-white text-gray-800 font-medium py-3 px-6 rounded-lg flex items-center justify-center shadow-lg hover:shadow-xl transition-shadow"
@@ -474,10 +299,6 @@ l13 35 178 5 179 5 38 108 37 107 -362 0 -363 0 -133 -407z"
       id="main-screen"
       class="screen absolute inset-0 flex flex-col items-center justify-center text-center p-4 opacity-0 hidden"
     >
-      <header id="header-bar">
-        <p>SYSTEM STATUS: <span class="text-green-400">ONLINE</span></p>
-        <p>LOCATION: <span class="text-gray-400">TAICHUNG</span></p>
-      </header>
       <div
         id="transcript-container"
         class="transcript-container w-full max-w-2xl h-[50vh] overflow-y-auto flex flex-col justify-end p-4"

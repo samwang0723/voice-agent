@@ -329,7 +329,7 @@ class UIManager extends EventTarget {
         break;
       case 'agent':
         line.innerHTML = `
-          <div class="text-white text-md">
+          <div class="agent text-white text-md">
             ${content}
           </div>
         `;
@@ -372,7 +372,7 @@ class UIManager extends EventTarget {
       streamingLine = document.createElement('div');
       streamingLine.className = 'transcript-line streaming-message mb-2 agent';
       streamingLine.innerHTML = `
-        <div class="text-white text-md" data-streaming-text="${this._escapeHtml(delta)}">
+        <div class="text-md" data-streaming-text="${this._escapeHtml(delta)}">
           ${delta}
         </div>
       `;
@@ -522,7 +522,7 @@ class UIManager extends EventTarget {
 
   // Update main status text based on current state
   updateMainStatus() {
-    let message = 'Tap the orb to speak';
+    let message = 'ANALYZING POTENTIAL THREATS';
     let type = 'info';
 
     if (!this.state.isConnected) {
@@ -536,8 +536,8 @@ class UIManager extends EventTarget {
       type = 'listening';
     } else if (this.state.isConnected && this.state.isVadReady) {
       message = this.state.isAuthenticated
-        ? 'Ready (Authenticated)'
-        : 'Ready to listen';
+        ? 'AWAITING COMMAND (Authenticated)'
+        : 'AWAITING COMMAND';
       type = 'connected';
     }
 
