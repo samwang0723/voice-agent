@@ -270,6 +270,15 @@ class UIManager extends EventTarget {
     }
   }
 
+  setOrbConnected(connected) {
+    if (!this.elements.orbContainer) return;
+    if (connected) {
+      this.elements.orbContainer.classList.add('connected');
+    } else {
+      this.elements.orbContainer.classList.remove('connected');
+    }
+  }
+
   setOrbBreathing(breathing) {
     if (!this.elements.orbContainer) return;
 
@@ -517,10 +526,10 @@ class UIManager extends EventTarget {
     let type = 'info';
 
     if (!this.state.isConnected) {
-      message = 'Connecting...';
+      message = 'Tap the orb to speak';
       type = 'warning';
     } else if (!this.state.isVadReady) {
-      message = 'Initializing voice detection...';
+      message = 'Initializing voice detection';
       type = 'warning';
     } else if (this.state.isListening) {
       message = 'Listening... Speak now';
@@ -783,18 +792,22 @@ class UIManager extends EventTarget {
   }
 
   updateOrbState(state) {
+    console.log('updateOrbState', state);
     // Map states to appropriate visual feedback
     switch (state) {
       case 'idle':
         this.setOrbListening(false);
         this.setOrbBreathing(true);
+        this.setOrbConnected(this.state.isConnected);
         break;
       case 'listening':
         this.setOrbListening(true);
+        this.setOrbConnected(false);
         break;
       case 'processing':
         this.setOrbListening(false);
         this.setOrbBreathing(false);
+        this.setOrbConnected(true);
         // Could add a processing animation here
         break;
       case 'speaking':
@@ -805,14 +818,17 @@ class UIManager extends EventTarget {
       case 'connected':
         this.setOrbListening(false);
         this.setOrbBreathing(true);
+        this.setOrbConnected(true);
         break;
       case 'disconnected':
         this.setOrbListening(false);
         this.setOrbBreathing(false);
+        this.setOrbConnected(false);
         break;
       default:
         this.setOrbListening(false);
         this.setOrbBreathing(false);
+        this.setOrbConnected(false);
     }
   }
 

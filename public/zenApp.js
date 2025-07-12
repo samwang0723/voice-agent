@@ -119,8 +119,8 @@ class ZenApp extends EventEmitter {
       // Step 7: Setup event listeners
       this._setupEventListeners();
 
-      // Step 8: Don't auto-initialize VAD, wait for user interaction
-      // await this._initializeVAD();
+      // Step 8: auto-initialize VAD, for faster startup
+      await this._initializeVAD();
 
       // Step 9: Don't auto-connect, wait for user interaction
       // await this._connectAndStart();
