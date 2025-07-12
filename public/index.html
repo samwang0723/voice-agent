@@ -3,40 +3,495 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Voice Agent</title>
-    <link rel="stylesheet" href="styles.css" />
-    <!-- ONNX Runtime -->
-    <script src="https://unpkg.com/onnxruntime-web@1.14.0/dist/ort.min.js"></script>
-    <!-- VAD Library -->
-    <script src="https://unpkg.com/@ricky0123/vad-web@0.0.19/dist/bundle.min.js"></script>
+    <title>Zen Voice Interface</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      /* latin-ext */
+      @font-face {
+        font-family: 'Google Sans';
+        font-style: normal;
+        font-weight: 500;
+        font-display: swap;
+        src: url(https://fonts.gstatic.com/s/googlesans/v27/4UabrENHsxJlGDuGo1OIlLU94Yt9CwZ-Pw.woff2)
+          format('woff2');
+        unicode-range:
+          U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF,
+          U+2113, U+2C60-2C7F, U+A720-A7FF;
+      }
+      /* latin */
+      @font-face {
+        font-family: 'Google Sans';
+        font-style: normal;
+        font-weight: 500;
+        font-display: swap;
+        src: url(https://fonts.gstatic.com/s/googlesans/v27/4UabrENHsxJlGDuGo1OIlLU94YtzCwY.woff2)
+          format('woff2');
+        unicode-range:
+          U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+          U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+          U+FEFF, U+FFFD;
+      }
+      /* latin-ext */
+      @font-face {
+        font-family: 'Google Sans';
+        font-style: normal;
+        font-weight: 400;
+        font-display: swap;
+        src: url(https://fonts.gstatic.com/s/googlesans/v27/4UaGrENHsxJlGDuGo1OIlL3Awp5MKg.woff2)
+          format('woff2');
+        unicode-range:
+          U+0100-024F, U+0259, U+1E00-1EFF, U+2020, U+20A0-20AB, U+20AD-20CF,
+          U+2113, U+2C60-2C7F, U+A720-A7FF;
+      }
+      /* latin */
+      @font-face {
+        font-family: 'Google Sans';
+        font-style: normal;
+        font-weight: 400;
+        font-display: swap;
+        src: url(https://fonts.gstatic.com/s/googlesans/v27/4UaGrENHsxJlGDuGo1OIlL3Owp4.woff2)
+          format('woff2');
+        unicode-range:
+          U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+          U+2000-206F, U+2074, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+          U+FEFF, U+FFFD;
+      }
+      body {
+        font-family: 'Google Sans', 'Inter', sans-serif;
+        background-color: #121212;
+        color: #e0e0e0;
+        overflow: hidden;
+      }
+
+      .screen {
+        transition: opacity 0.7s ease-in-out;
+      }
+
+      /* --- Main Screen Transition --- */
+      #main-screen {
+        transition:
+          transform 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+          opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1),
+          filter 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      #main-screen.settings-view {
+        transform: scale(0.95) translateY(-2%);
+        opacity: 0.4;
+        filter: blur(4px);
+        pointer-events: none; /* Prevents clicking on the background orb */
+      }
+
+      /* --- The Pond/Orb Animation --- */
+      .orb-container {
+        position: relative;
+        width: 200px;
+        height: 200px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+
+      .orb {
+        position: absolute;
+        border-radius: 50%;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        animation-duration: 3s;
+        animation-iteration-count: infinite;
+        animation-timing-function: ease-in-out;
+      }
+
+      .orb-1 {
+        width: 100px;
+        height: 100px;
+        animation-name: breathe;
+        animation-delay: 0s;
+      }
+
+      .orb-2 {
+        width: 150px;
+        height: 150px;
+        animation-name: breathe;
+        animation-delay: 0.5s;
+      }
+
+      .orb-3 {
+        width: 200px;
+        height: 200px;
+        animation-name: breathe;
+        animation-delay: 1s;
+      }
+
+      .orb-center {
+        width: 60px;
+        height: 60px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        border-radius: 50%;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        z-index: 10;
+      }
+
+      .orb-center:hover {
+        background: rgba(255, 255, 255, 0.1);
+        transform: scale(1.1);
+      }
+
+      .orb-center-icon {
+        transition: opacity 0.3s ease;
+      }
+
+      @keyframes breathe {
+        0%,
+        100% {
+          transform: scale(0.8);
+          opacity: 0.2;
+        }
+        50% {
+          transform: scale(1);
+          opacity: 0.5;
+        }
+      }
+
+      /* Listening State Animation */
+      .orb-container.listening .orb {
+        animation-name: ripple;
+        animation-duration: 2s;
+      }
+
+      .orb-container.listening .orb-center {
+        background: rgba(74, 144, 226, 0.2);
+        border-color: rgba(74, 144, 226, 0.5);
+      }
+
+      @keyframes ripple {
+        0% {
+          transform: scale(0.5);
+          opacity: 0.8;
+        }
+        100% {
+          transform: scale(1.5);
+          opacity: 0;
+        }
+      }
+
+      /* --- Transcript --- */
+      .transcript-container {
+        -webkit-mask-image: linear-gradient(
+          to bottom,
+          transparent 0%,
+          black 5%,
+          black 95%,
+          transparent 100%
+        );
+        mask-image: linear-gradient(
+          to bottom,
+          transparent 0%,
+          black 5%,
+          black 95%,
+          transparent 100%
+        );
+      }
+      .transcript-line {
+        opacity: 0;
+        animation: fadeIn 0.5s forwards;
+      }
+      .user-text {
+        color: rgba(255, 255, 255, 0.6);
+      }
+      @keyframes fadeIn {
+        to {
+          opacity: 1;
+        }
+      }
+
+      /* --- Settings Panel --- */
+      .settings-panel {
+        background: rgba(28, 28, 30, 0.8);
+        backdrop-filter: blur(15px) saturate(180%);
+        -webkit-backdrop-filter: blur(15px) saturate(180%);
+        transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+        transform: translateY(100%);
+        z-index: 100;
+        touch-action: none; /* Prevents page scroll while swiping panel */
+      }
+      .settings-panel.open {
+        transform: translateY(0);
+      }
+      .settings-handle {
+        width: 40px;
+        height: 4px;
+        background-color: rgba(255, 255, 255, 0.3);
+        border-radius: 2px;
+      }
+      .settings-row {
+        font-size: 0.9rem; /* Adjust this value as needed */
+      }
+      select {
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3E%3Cpath stroke='%236B7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3E%3C/svg%3E");
+        background-position: right 0.5rem center;
+        background-repeat: no-repeat;
+        background-size: 1.25em;
+        padding-right: 2.5rem; /* Add padding to the right */
+      }
+    </style>
   </head>
-  <body>
-    <!-- Main Content -->
-    <div class="app-container">
-      <!-- Status Bar -->
-      <div class="status-bar">
-        <div class="status-indicator" id="statusIndicator"></div>
-        <span class="status-text" id="statusText">Connecting...</span>
+  <body
+    class="flex flex-col items-center justify-center h-screen w-screen select-none"
+  >
+    <div
+      id="login-screen"
+      class="screen absolute inset-0 flex flex-col items-center justify-center text-center p-8 opacity-100"
+    >
+      <h1 class="text-4xl font-light text-white mb-2">Zen AI</h1>
+      <p class="text-lg text-gray-400 mb-12">A calm space for conversation</p>
+      <button
+        id="google-login-button"
+        class="bg-white text-gray-800 font-medium py-3 px-6 rounded-lg flex items-center justify-center shadow-lg hover:shadow-xl transition-shadow"
+      >
+        <svg class="google-icon w-6 h-6 mr-3 flex-shrink-0" viewBox="0 0 24 24">
+          <path
+            fill="#4285F4"
+            d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+          />
+          <path
+            fill="#34A853"
+            d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+          />
+          <path
+            fill="#FBBC05"
+            d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+          />
+          <path
+            fill="#EA4335"
+            d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+          />
+        </svg>
+        Sign in with Google
+      </button>
+    </div>
+
+    <div
+      id="main-screen"
+      class="screen absolute inset-0 flex flex-col items-center justify-center text-center p-4 opacity-0 hidden"
+    >
+      <div
+        id="transcript-container"
+        class="transcript-container w-full max-w-2xl h-[50vh] overflow-y-auto flex flex-col justify-end p-4"
+      >
+        <div id="transcript-content" class="w-full">
+          <p
+            id="status-text"
+            class="text-lg text-gray-400 transition-opacity duration-500"
+          >
+            Tap the orb to speak
+          </p>
+        </div>
       </div>
 
-      <!-- Messages Display -->
-      <div class="messages-container">
-        <div class="messages" id="messages"></div>
+      <div id="orb-container" class="orb-container my-8">
+        <div class="orb orb-1"></div>
+        <div class="orb orb-2"></div>
+        <div class="orb orb-3"></div>
+        <div id="orb-center" class="orb-center">
+          <svg
+            id="mic-icon"
+            class="orb-center-icon h-6 w-6 text-gray-300"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="1.5"
+              d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+            />
+          </svg>
+          <svg
+            id="stop-icon"
+            class="orb-center-icon h-6 w-6 text-blue-300 hidden"
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+          >
+            <path
+              fill-rule="evenodd"
+              d="M10 18a8 8 0 100-16 8 8 0 000 16zM8 7a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1zm4 0a1 1 0 00-1 1v4a1 1 0 102 0V8a1 1 0 00-1-1z"
+              clip-rule="evenodd"
+            />
+          </svg>
+        </div>
       </div>
 
-      <!-- Settings Bar -->
-      <div class="settings-bar">
-        <div class="setting">
-          <label for="stt-engine-select">STT:</label>
-          <select id="stt-engine-select">
+      <div
+        class="w-full flex justify-between items-center p-4 absolute bottom-0"
+      >
+        <button
+          id="logout-button"
+          class="p-2 rounded-full hover:bg-white/10 transition-colors"
+        >
+          <svg
+            class="h-6 w-6 text-gray-500"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="1.5"
+              d="M8.25 9V5.25A2.25 2.25 0 0 1 10.5 3h6a2.25 2.25 0 0 1 2.25 2.25v13.5A2.25 2.25 0 0 1 16.5 21h-6a2.25 2.25 0 0 1-2.25-2.25V15m-3 0-3-3m0 0 3-3m-3 3H15"
+            />
+          </svg>
+        </button>
+
+        <button
+          id="settings-button"
+          class="p-2 rounded-full hover:bg-white/10 transition-colors"
+        >
+          <svg
+            class="h-6 w-6 text-gray-500"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="1.5"
+              d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"
+            />
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="1.5"
+              d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
+            />
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div
+      id="settings-panel"
+      class="settings-panel fixed bottom-0 left-0 right-0 rounded-t-2xl p-4 pt-3 shadow-2xl max-h-[75vh] overflow-y-auto"
+    >
+      <div class="w-full flex justify-center mb-4">
+        <div class="settings-handle"></div>
+      </div>
+      <div class="flex justify-between items-center mb-6">
+        <h2 class="text-xl font-medium text-white">Settings</h2>
+        <button
+          id="close-settings-button"
+          class="p-2 rounded-full hover:bg-white/10 transition-colors"
+        >
+          <svg
+            class="h-6 w-6 text-gray-400"
+            xmlns="http://www.w3.org/2000/svg"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M19 9l-7 7-7-7"
+            />
+          </svg>
+        </button>
+      </div>
+
+      <div class="space-y-6">
+        <div class="flex items-center justify-between settings-row">
+          <div class="flex items-center space-x-3">
+            <svg
+              id="connection-status-icon"
+              class="h-5 w-5 text-green-400"
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 20 20"
+              fill="currentColor"
+            >
+              <path
+                fill-rule="evenodd"
+                d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                clip-rule="evenodd"
+              />
+            </svg>
+            <span class="text-white">Connection</span>
+          </div>
+          <span id="connection-status-text" class="text-green-400 text-md"
+            >Connected</span
+          >
+        </div>
+
+        <div class="flex items-center justify-between settings-row">
+          <div class="flex items-center space-x-3">
+            <svg
+              class="h-5 w-5 text-blue-400"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.5"
+                d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+              />
+            </svg>
+            <span class="text-white">Speech-to-Text</span>
+          </div>
+          <select
+            id="stt-engine-select"
+            class="bg-white/10 text-white rounded-md px-3 py-1 border-none focus:ring-2 focus:ring-blue-500"
+          >
             <option value="groq" selected>Groq</option>
             <option value="deepgram">Deepgram</option>
             <option value="azure">Azure Speech</option>
           </select>
         </div>
-        <div class="setting">
-          <label for="tts-engine-select">TTS:</label>
-          <select id="tts-engine-select">
+
+        <div class="flex items-center justify-between settings-row">
+          <div class="flex items-center space-x-3">
+            <svg
+              class="h-5 w-5 text-purple-400"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.5"
+                d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M9.464 15.536a5 5 0 01-7.072-7.072m9.9-2.828a9 9 0 00-12.728 0"
+              />
+            </svg>
+            <span class="text-white">Text-to-Speech</span>
+          </div>
+          <select
+            id="tts-engine-select"
+            class="bg-white/10 text-white rounded-md px-3 py-1 border-none focus:ring-2 focus:ring-blue-500"
+          >
             <option value="elevenlabs" selected>ElevenLabs</option>
             <option value="azure">Azure Speech</option>
             <option value="groq">Groq</option>
@@ -44,65 +499,134 @@
             <option value="deepgram">Deepgram</option>
           </select>
         </div>
-        <div class="setting">
-          <label for="chat-mode-select">Mode:</label>
-          <select id="chat-mode-select">
-            <option value="stream" selected>Stream</option>
+
+        <div class="flex items-center justify-between settings-row">
+          <div class="flex items-center space-x-3">
+            <svg
+              class="h-5 w-5 text-gray-400"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.5"
+                d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+              />
+            </svg>
+            <span class="text-white">Chat Mode</span>
+          </div>
+          <select
+            id="chat-mode-select"
+            class="bg-white/10 text-white rounded-md px-3 py-1 border-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="stream">Stream</option>
             <option value="single">Single</option>
           </select>
         </div>
-        <div class="setting">
-          <button
-            id="testAudioBtn"
-            class="test-audio-btn"
-            title="Test audio playback"
-          >
-            <svg class="btn-icon" viewBox="0 0 24 24">
+
+        <div class="flex items-center justify-between settings-row">
+          <div class="flex items-center space-x-3">
+            <svg
+              class="h-5 w-5 text-yellow-400"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
               <path
-                d="M3,9V15H7L12,20V4L7,9H3M16.5,12C16.5,10.23 15.5,8.71 14,7.97V16C15.5,15.29 16.5,13.76 16.5,12Z"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.5"
+                d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
               />
             </svg>
-            <span id="testAudioText">Test Audio</span>
+            <span class="text-white">Noise Reduction</span>
+          </div>
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input
+              id="noise-reduction-toggle"
+              type="checkbox"
+              checked
+              class="sr-only peer"
+            />
+            <div
+              class="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"
+            ></div>
+          </label>
+        </div>
+
+        <div class="flex items-center justify-between settings-row">
+          <div class="flex items-center space-x-3">
+            <svg
+              class="h-5 w-5 text-green-400"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="1.5"
+                d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M9.464 15.536a5 5 0 01-7.072-7.072m9.9-2.828a9 9 0 00-12.728 0"
+              />
+            </svg>
+            <span class="text-white">Test Audio</span>
+          </div>
+          <button
+            id="test-audio-button"
+            class="bg-blue-600 hover:bg-blue-700 text-white text-md py-1 px-3 rounded-md transition-colors"
+          >
+            Test
           </button>
         </div>
-      </div>
 
-      <!-- Bottom Controls -->
-      <div class="bottom-bar">
-        <button class="bottom-btn" id="clearBtn">
-          <svg class="btn-icon" viewBox="0 0 24 24">
-            <path
-              d="M19,4H15.5L14.5,3H9.5L8.5,4H5V6H19M6,19A2,2 0 0,0 8,21H16A2,2 0 0,0 18,19V7H6V19Z"
+        <div class="flex items-center justify-between settings-row">
+          <div class="flex items-center space-x-3">
+            <svg
+              class="h-5 w-5 text-gray-400"
+              xmlns="http://www.w3.org/2000/svg"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke-width="1.5"
+              stroke="currentColor"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z"
+              />
+            </svg>
+            <span class="text-white">Show System Messages</span>
+          </div>
+          <label class="relative inline-flex items-center cursor-pointer">
+            <input
+              id="system-message-toggle"
+              type="checkbox"
+              class="sr-only peer"
             />
-          </svg>
-          <span>Clear</span>
-        </button>
-
-        <button class="bottom-btn disconnect hidden" id="disconnectBtn">
-          <svg class="btn-icon" viewBox="0 0 24 24">
-            <path
-              d="M16.56,5.44L15.11,6.89C16.84,7.94 18,9.83 18,12A6,6 0 0,1 12,18A6,6 0 0,1 6,12C6,9.83 7.16,7.94 8.88,6.88L7.44,5.44C5.36,6.88 4,9.28 4,12A8,8 0 0,0 12,20A8,8 0 0,0 20,12C20,9.28 18.64,6.88 16.56,5.44M12,4A8,8 0 0,1 18.93,6.07L20.34,4.66C18.17,2.49 15.21,1.71 12,1.71C8.79,1.71 5.83,2.49 3.66,4.66L5.07,6.07A8,8 0 0,1 12,4Z"
-            />
-          </svg>
-          <span>Disconnect</span>
-        </button>
-
-        <button class="bottom-btn connect" id="connectBtn">
-          <svg class="btn-icon" viewBox="0 0 24 24">
-            <path
-              d="M20.01 15.38C18.78 15.38 17.59 15.18 16.48 14.82C16.13 14.7 15.74 14.79 15.47 15.06L13.9 17.03C11.07 15.68 8.42 13.13 7.01 10.2L8.96 8.54C9.23 8.26 9.31 7.87 9.2 7.52C8.83 6.41 8.64 5.22 8.64 3.99C8.64 3.45 8.19 3 7.65 3H4.19C3.65 3 3 3.24 3 3.99C3 13.28 10.73 21 20.01 21C20.72 21 21 20.37 21 19.82V16.37C21 15.93 20.55 15.38 20.01 15.38Z"
-            />
-          </svg>
-          <span>Connect</span>
-        </button>
+            <div
+              class="w-11 h-6 bg-gray-600 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"
+            ></div>
+          </label>
+        </div>
       </div>
     </div>
 
-    <!-- RNNoise Library -->
-    <script type="module" src="rnnoise.js"></script>
-    <!-- Audio Player Module -->
-    <script type="module" src="audioPlayer.js"></script>
-    <!-- Application Script -->
-    <script type="module" src="script.js"></script>
+    <!-- External Dependencies -->
+    <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.14.0/dist/ort.min.js"></script>
+    <script src="https://unpkg.com/@ricky0123/vad-web@0.0.19/dist/bundle.min.js"></script>
+
+    <!-- Application Modules -->
+    <script type="module" src="./rnnoise.js"></script>
+    <script type="module" src="./audioPlayer.js"></script>
+    <script type="module" src="./auth.js"></script>
+    <script type="module" src="./transport.js"></script>
+    <script type="module" src="./vad.js"></script>
+    <script type="module" src="./ui.js"></script>
+    <script type="module" src="./zenApp.js"></script>
   </body>
 </html>

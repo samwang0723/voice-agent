@@ -184,10 +184,11 @@ export class ElevenLabsStreamingTextToSpeechService
           model_id: config.modelName || 'eleven_multilingual_v2',
           output_format: 'pcm_16000',
           voice_settings: {
-            stability: 0,
+            stability: 0.6,
             similarity_boost: 1.0,
             use_speaker_boost: true,
-            style: 1.0,
+            style: 0.4,
+            speed: 1.0,
           },
         }
       );
