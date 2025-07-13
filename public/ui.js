@@ -26,6 +26,9 @@ class UIManager extends EventTarget {
     this.initializeElements();
     this.setupEventListeners();
     this.setupSwipeGestures();
+
+    // Update location on initialization (for returning users)
+    this.updateUserLocation();
   }
 
   // Initialize DOM element references
@@ -46,6 +49,10 @@ class UIManager extends EventTarget {
     );
     this.elements.transcriptContent =
       document.getElementById('transcript-content');
+
+    // Header elements
+    this.elements.systemStatus = document.getElementById('system-status');
+    this.elements.systemLocation = document.getElementById('system-location');
 
     // Orb elements
     this.elements.orbContainer = document.getElementById('orb-container');
@@ -97,6 +104,17 @@ class UIManager extends EventTarget {
       this.elements.orbCenter.addEventListener('click', () => {
         this.handleOrbClick();
       });
+    }
+
+    // Location click for manual refresh
+    if (this.elements.systemLocation) {
+      this.elements.systemLocation.addEventListener('click', () => {
+        this.updateUserLocation();
+      });
+
+      // Add cursor pointer style
+      this.elements.systemLocation.style.cursor = 'pointer';
+      this.elements.systemLocation.title = 'Click to refresh location';
     }
 
     // Logout button
@@ -248,6 +266,9 @@ class UIManager extends EventTarget {
         this.elements.loginScreen.classList.add('hidden');
         this.elements.mainScreen.classList.remove('hidden');
         this.elements.mainScreen.style.opacity = '1';
+
+        // Update user location when main screen is shown
+        this.updateUserLocation();
       }, 300);
       this.state.currentScreen = 'main';
     }
@@ -510,8 +531,130 @@ class UIManager extends EventTarget {
       }
     }
 
+    // Update header system status
+    this.updateSystemStatus(connected, authenticated);
+
     // Update main status based on connection and VAD readiness
     this.updateMainStatus();
+  }
+
+  // Update system status in header
+  updateSystemStatus(connected, authenticated = false) {
+    if (this.elements.systemStatus) {
+      if (connected) {
+        if (authenticated) {
+          this.elements.systemStatus.textContent = 'ONLINE (AUTH)';
+          this.elements.systemStatus.className = 'text-green-400';
+        } else {
+          this.elements.systemStatus.textContent = 'ONLINE';
+          this.elements.systemStatus.className = 'text-yellow-400';
+        }
+      } else {
+        this.elements.systemStatus.textContent = 'OFFLINE';
+        this.elements.systemStatus.className = 'text-red-400';
+      }
+    }
+  }
+
+  // Get and update user's real location
+  async updateUserLocation() {
+    if (!this.elements.systemLocation) return;
+
+    try {
+      // Check if geolocation is supported
+      if (!navigator.geolocation) {
+        this.elements.systemLocation.textContent = 'LOCATION UNAVAILABLE';
+        return;
+      }
+
+      // Show loading state
+      this.elements.systemLocation.textContent = 'LOCATING...';
+      this.elements.systemLocation.className = 'text-yellow-400';
+
+      // Get current position
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 300000, // 5 minutes
+        });
+      });
+
+      const { latitude, longitude } = position.coords;
+
+      // Use reverse geocoding to get location name
+      const locationName = await this.reverseGeocode(latitude, longitude);
+
+      this.elements.systemLocation.textContent = locationName.toUpperCase();
+      this.elements.systemLocation.className = 'text-gray-400';
+
+      console.log(`📍 Location updated: ${locationName}`);
+    } catch (error) {
+      console.error('❌ Failed to get location:', error);
+
+      // Handle different error types
+      let fallbackText = 'LOCATION UNAVAILABLE';
+      if (error.code === 1) {
+        fallbackText = 'LOCATION DENIED';
+      } else if (error.code === 2) {
+        fallbackText = 'LOCATION UNAVAILABLE';
+      } else if (error.code === 3) {
+        fallbackText = 'LOCATION TIMEOUT';
+      }
+
+      this.elements.systemLocation.textContent = fallbackText;
+      this.elements.systemLocation.className = 'text-red-400';
+    }
+  }
+
+  // Reverse geocode coordinates to location name
+  async reverseGeocode(lat, lon) {
+    try {
+      // Use a free geocoding service (nominatim from OpenStreetMap)
+      // Request English language results
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=10&addressdetails=1&accept-language=en`,
+        {
+          headers: {
+            'User-Agent': 'ZenVoiceInterface/1.0',
+            'Accept-Language': 'en,en-US;q=0.9',
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Geocoding failed: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      // Extract city/town name from the response
+      const address = data.address || {};
+
+      // Try to get the most appropriate English location name
+      const locationName =
+        address.city ||
+        address.town ||
+        address.village ||
+        address.municipality ||
+        address.county ||
+        address.state ||
+        address.region ||
+        address.country ||
+        'Unknown Location';
+
+      // Clean up the location name (remove unnecessary prefixes/suffixes)
+      const cleanLocationName = locationName
+        .replace(/^(City of|Town of|Village of|Municipality of)\s+/i, '')
+        .replace(/\s+(City|Town|Village|Municipality|County|District)$/i, '')
+        .trim();
+
+      return cleanLocationName;
+    } catch (error) {
+      console.error('❌ Reverse geocoding failed:', error);
+      // Fallback to coordinates if geocoding fails
+      return `${lat.toFixed(2)}, ${lon.toFixed(2)}`;
+    }
   }
 
   // VAD readiness updates

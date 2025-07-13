@@ -588,8 +588,18 @@ l13 35 178 5 179 5 38 108 37 107 -362 0 -363 0 -133 -407z"
       class="screen absolute inset-0 flex flex-col items-center justify-center text-center p-4 opacity-0 hidden"
     >
       <header id="header-bar">
-        <p>SYSTEM STATUS: <span class="text-green-400">ONLINE</span></p>
-        <p>LOCATION: <span class="text-gray-400">TAICHUNG</span></p>
+        <p>
+          SYSTEM STATUS:
+          <span id="system-status" class="text-gray-400">OFFLINE</span>
+        </p>
+        <p>
+          LOCATION:
+          <span
+            id="system-location"
+            class="text-gray-400 hover:text-cyan-400 transition-colors"
+            >TAICHUNG</span
+          >
+        </p>
       </header>
       <div
         id="transcript-container"
