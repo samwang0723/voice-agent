@@ -416,6 +416,29 @@
           height: 100dvh;
         }
       }
+
+      /* Speaking indicator for agent messages */
+      .transcript-line.agent.speaking .agent,
+      .transcript-line.agent.speaking .text-md {
+        color: rgb(102, 187, 106);
+        position: relative;
+      }
+
+      .speaking-indicator {
+        opacity: 0;
+        animation: fadeIn 0.3s ease-in-out forwards;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+          transform: translateY(5px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
     </style>
   </head>
   <body
@@ -772,9 +795,9 @@ l13 35 178 5 179 5 38 108 37 107 -362 0 -363 0 -133 -407z"
             id="tts-engine-select"
             class="bg-white/10 text-white rounded-md px-3 py-1 border-none focus:ring-2 focus:ring-blue-500"
           >
-            <option value="elevenlabs" selected>ElevenLabs</option>
+            <option value="minimax" selected>Minimax</option>
+            <option value="elevenlabs">ElevenLabs</option>
             <option value="azure">Azure Speech</option>
-            <option value="minimax">Minimax</option>
             <option value="groq">Groq</option>
             <option value="cartesia">Cartesia</option>
             <option value="deepgram">Deepgram</option>

@@ -420,16 +420,38 @@ class ZenApp extends EventEmitter {
     this.audioPlayer.onStart = () => {
       this.ui.updateOrbState('speaking');
       this.ui.addSpeakingIndicator();
+      const agentMessages =
+        this.ui.elements.transcriptContent?.querySelectorAll(
+          '.transcript-line.agent'
+        );
+      console.log('agentMessages', agentMessages);
+      const lastAgentMessage = agentMessages?.[agentMessages.length - 1];
+      lastAgentMessage?.classList.add('speaking');
     };
 
     this.audioPlayer.onFinish = () => {
       this.ui.updateOrbState('idle');
       this.ui.removeSpeakingIndicator();
+      const speakingMessages =
+        this.ui.elements.transcriptContent?.querySelectorAll(
+          '.transcript-line.agent.speaking'
+        );
+      speakingMessages?.forEach((msg) => {
+        msg.classList.remove('speaking');
+      });
     };
 
     this.audioPlayer.onCancel = () => {
       this.ui.updateOrbState('idle');
       this.ui.removeSpeakingIndicator();
+      const speakingMessages =
+        this.ui.elements.transcriptContent?.querySelectorAll(
+          '.transcript-line.agent.speaking'
+        );
+      speakingMessages?.forEach((msg) => {
+        msg.classList.remove('speaking');
+      });
+      this.ui.appendTranscriptLine('Audio interrupted', 'system');
     };
 
     this.audioPlayer.onAutoplayBlocked = () => {

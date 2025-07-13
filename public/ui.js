@@ -626,57 +626,6 @@ class UIManager extends EventTarget {
     });
   }
 
-  // AudioPlayer callback integration
-  setupAudioPlayerCallbacks(audioPlayer) {
-    if (!audioPlayer) return;
-
-    // Visual feedback when audio starts playing
-    audioPlayer.onStart = () => {
-      const agentMessages = this.elements.transcriptContent?.querySelectorAll(
-        '.transcript-line.agent'
-      );
-      const lastAgentMessage = agentMessages?.[agentMessages.length - 1];
-      if (lastAgentMessage) {
-        lastAgentMessage.classList.add('speaking');
-        // Add speaking indicator
-        const indicator = document.createElement('div');
-        indicator.className = 'speaking-indicator text-blue-400 text-xs mt-1';
-        indicator.textContent = '🔊 Speaking...';
-        lastAgentMessage.appendChild(indicator);
-      }
-    };
-
-    // Remove visual feedback when audio finishes
-    audioPlayer.onFinish = () => {
-      const speakingMessages =
-        this.elements.transcriptContent?.querySelectorAll(
-          '.transcript-line.agent.speaking'
-        );
-      speakingMessages?.forEach((msg) => {
-        msg.classList.remove('speaking');
-        msg.querySelector('.speaking-indicator')?.remove();
-      });
-    };
-
-    // Handle audio cancellation (barge-in)
-    audioPlayer.onCancel = () => {
-      const speakingMessages =
-        this.elements.transcriptContent?.querySelectorAll(
-          '.transcript-line.agent.speaking'
-        );
-      speakingMessages?.forEach((msg) => {
-        msg.classList.remove('speaking');
-        msg.querySelector('.speaking-indicator')?.remove();
-      });
-      this.appendTranscriptLine('Audio interrupted', 'system');
-    };
-
-    // Handle autoplay blocking
-    audioPlayer.onAutoplayBlocked = () => {
-      this.showAudioUnlockPrompt();
-    };
-  }
-
   // Get current settings values
   getSettings() {
     return {
