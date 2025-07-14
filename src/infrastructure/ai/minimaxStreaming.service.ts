@@ -35,6 +35,7 @@ export class MinimaxStreamingTextToSpeechService
   private isTaskStarted: boolean = false;
 
   // Audio processing constants - matching ElevenLabs for consistency
+  // raw-16khz-16bit-mono-pcm
   private static readonly OUTPUT_CHUNK_SIZE = 16000; // 16KB chunks for ~80ms at 16kHz mono PCM
   private static readonly SAMPLE_WIDTH = 2; // 2 bytes per 16-bit PCM sample
   private static readonly WS_URL = 'wss://api.minimax.io/ws/v1/t2a_v2';
@@ -44,9 +45,9 @@ export class MinimaxStreamingTextToSpeechService
       ttsConfigs.minimax?.voiceId ||
       'moss_audio_73457c58-5ee8-11f0-ba28-7e51ceb5ef24',
     speed: 1,
-    vol: 2,
+    vol: 1,
     pitch: 0,
-    emotion: 'happy',
+    emotion: 'neutral',
   };
 
   private readonly defaultAudioSettings: MinimaxAudioSettings = {
@@ -121,8 +122,10 @@ export class MinimaxStreamingTextToSpeechService
   }
 
   private async startTask(): Promise<void> {
+    // Ensure WebSocket connection is ready
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      throw new Error('WebSocket connection not established');
+      logger.warn('WebSocket not ready, re-establishing connection...');
+      await this.initializeWebSocketConnection();
     }
 
     if (this.isTaskStarted) {
@@ -430,10 +433,19 @@ export class MinimaxStreamingTextToSpeechService
       let audioCollectionError: Error | null = null;
 
       // Store reference to current WebSocket
+      if (!this.ws || this.ws.readyState !== 1) {
+        logger.warn(
+          'WebSocket not ready for chunk synthesis, re-establishing...'
+        );
+        await this.initializeWebSocketConnection();
+        await this.startTask();
+      }
+
       const currentWs = this.ws;
-      if (!currentWs || currentWs.readyState !== 1) {
-        // WebSocket.OPEN = 1
-        logger.warn('WebSocket not available for text chunk synthesis');
+      if (!currentWs) {
+        logger.error(
+          'Failed to establish WebSocket connection for chunk synthesis'
+        );
         return;
       }
 
