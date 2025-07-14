@@ -332,9 +332,9 @@ class AudioPlayer {
 
     // Start playback
     source.start(startTime);
-    console.log(
-      `AudioPlayer: Scheduled PCM source ${sourceId} at ${startTime.toFixed(3)}s`
-    );
+    // console.log(
+    //   `AudioPlayer: Scheduled PCM source ${sourceId} at ${startTime.toFixed(3)}s`
+    // );
 
     return source;
   }

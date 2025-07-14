@@ -2,12 +2,12 @@ import createRNNWasmModule from './rnnoise.js';
 
 // VAD Tuning Configuration - Centralized settings to prevent false triggers
 const DEFAULT_VAD_TUNING = {
-  positiveSpeechThreshold: 0.7, // Increased from 0.5-0.6 for less sensitivity
-  negativeSpeechThreshold: 0.5, // Increased from 0.35-0.4 for cleaner cutoffs
-  minSpeechFrames: 6, // Increased from 3-4, requires ~64ms vs 32ms
-  redemptionFrames: 4, // Reduced from 8 for shorter speech tails
+  positiveSpeechThreshold: 0.8, // Increased from 0.7 for less sensitivity
+  negativeSpeechThreshold: 0.6, // Increased from 0.5 for cleaner cutoffs
+  minSpeechFrames: 10, // Increased from 6, requires ~100ms vs 64ms
+  redemptionFrames: 3, // Reduced from 4 for shorter speech tails
   preSpeechPadFrames: 1,
-  frameSamples: 512,
+  frameSamples: 480, // Aligned with RNNoise frame size
 };
 
 // RMS Energy Gate Threshold (approximately -40 dBFS)
@@ -79,26 +79,8 @@ class VADManager extends EventTarget {
         {
           model: 'v5',
           ...DEFAULT_VAD_TUNING,
-          userSpeakingThreshold: 0.4,
+          userSpeakingThreshold: 0.6,
           preSpeechPadFrames: 2,
-        },
-        // Simplest configuration first
-        {
-          model: 'legacy',
-          positiveSpeechThreshold: 0.5,
-          negativeSpeechThreshold: 0.35,
-          preSpeechPadFrames: 1,
-          minSpeechFrames: 3,
-        },
-        // More detailed legacy config
-        {
-          model: 'legacy',
-          positiveSpeechThreshold: 0.6,
-          negativeSpeechThreshold: 0.4,
-          redemptionFrames: 8,
-          preSpeechPadFrames: 1,
-          minSpeechFrames: 4,
-          frameSamples: 1536,
         },
       ];
 

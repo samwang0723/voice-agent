@@ -240,7 +240,11 @@ export class VoiceAgentService {
               // Create async generator that consumes from the text queue
               const audioTextGenerator =
                 async function* (): AsyncGenerator<string> {
+                  let buffer = '';
                   let queueIndex = 0;
+                  // Expanded delimiters for more natural paragraph detection
+                  const sentenceEnders = ['.', '!', '?', '\n'];
+
                   while (
                     !textStreamingComplete ||
                     queueIndex < textChunkQueue.length
@@ -254,11 +258,38 @@ export class VoiceAgentService {
                       break;
                     }
 
-                    // Yield available chunks
+                    // Consume available chunks from the queue and add to buffer
                     while (queueIndex < textChunkQueue.length) {
-                      const chunk = textChunkQueue[queueIndex++];
-                      if (chunk && chunk.trim()) {
-                        yield chunk;
+                      const chunk = textChunkQueue[queueIndex];
+                      if (chunk) {
+                        buffer += chunk;
+                      }
+                      queueIndex++;
+                    }
+
+                    // Find the last occurrence of a sentence ender
+                    let lastEnderIndex = -1;
+                    for (let i = buffer.length - 1; i >= 0; i--) {
+                      const char = buffer[i];
+                      if (char && sentenceEnders.includes(char)) {
+                        lastEnderIndex = i;
+                        break;
+                      }
+                    }
+
+                    // If an ender is found, yield the content up to it
+                    if (lastEnderIndex !== -1) {
+                      const textToYield = buffer.substring(
+                        0,
+                        lastEnderIndex + 1
+                      );
+                      buffer = buffer.substring(lastEnderIndex + 1);
+
+                      if (textToYield.trim()) {
+                        logger.debug(
+                          `[${conversationId}] Yielding paragraph for TTS: "${textToYield}"`
+                        );
+                        yield textToYield;
                       }
                     }
 
@@ -270,6 +301,15 @@ export class VoiceAgentService {
                       await new Promise((resolve) => setTimeout(resolve, 10));
                     }
                   }
+
+                  // After the loop, flush any remaining content in the buffer
+                  if (buffer.trim()) {
+                    logger.debug(
+                      `[${conversationId}] Flushing remaining buffer for TTS: "${buffer}"`
+                    );
+                    yield buffer;
+                  }
+
                   logger.debug(
                     `[${conversationId}] Audio text generator completed, processed ${queueIndex} chunks`
                   );

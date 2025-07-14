@@ -499,9 +499,6 @@ class ZenApp extends EventEmitter {
       // Send initial configuration to the server
       const settings = this.ui.getSettings();
       this.transport.sendConfig(settings);
-
-      // Don't auto-start listening
-      // this._checkAutoStartListening();
     });
 
     this.transport.on('disconnected', () => {
@@ -531,17 +528,13 @@ class ZenApp extends EventEmitter {
       this.isVadReady = true;
       this.ui.updateVADStatus(true);
       this.emit('vadStateChanged', true);
-      // Don't auto-start listening
-      // this._checkAutoStartListening();
     });
 
     this.vad.on('speechStart', () => {
       this.ui.updateOrbState('listening');
-      // Implement barge-in
-      if (this.audioPlayer.isPlaying()) {
-        this.audioPlayer.stop();
-        this.transport.sendBargeIn();
-      }
+      // Implement barge-in: stop any playing/pending audio and notify the server.
+      this.audioPlayer.stop();
+      this.transport.sendBargeIn();
     });
 
     this.vad.on('vadMisfire', () => {
@@ -889,16 +882,6 @@ class ZenApp extends EventEmitter {
     } catch (error) {
       console.error('❌ WebSocket connection failed:', error);
       this.ui.showError('Failed to connect to server');
-    }
-  }
-
-  /**
-   * Check if conditions are met to auto-start listening
-   */
-  _checkAutoStartListening() {
-    if (this.isConnected && this.isVadReady && !this.isListening) {
-      console.log('🎯 Auto-starting listening - all conditions met');
-      this._startListening();
     }
   }
 
