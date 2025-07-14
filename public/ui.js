@@ -27,8 +27,8 @@ class UIManager extends EventTarget {
     this.setupEventListeners();
     this.setupSwipeGestures();
 
-    // Update location on initialization (for returning users)
-    this.updateUserLocation();
+    // This is called in showMainScreen, so we can remove it from here
+    // this.updateUserLocation();
   }
 
   // Initialize DOM element references

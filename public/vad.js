@@ -65,7 +65,8 @@ class VADManager extends EventTarget {
         throw new Error('VAD library not loaded');
       }
 
-      console.log('ONNX Runtime version:', ort.version || 'unknown');
+      // This is logged in zenApp.js, so we can remove this to avoid confusion
+      // console.log('ONNX Runtime version:', ort.version || 'unknown');
       console.log('VAD library loaded successfully');
 
       // Initialize RNNoise after VAD setup

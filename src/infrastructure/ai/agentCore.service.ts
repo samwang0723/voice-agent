@@ -1,4 +1,4 @@
-import { agentSwarmConfig } from '../../config';
+import { agentCoreConfig } from '../../config';
 import logger from '../logger';
 
 export interface ChatResponse {
@@ -32,17 +32,17 @@ export interface ClientContext {
   clientDatetime?: string;
 }
 
-export class AgentSwarmService {
+export class AgentCoreService {
   private baseURL: string;
   private streamTimeout: number;
   private maxRetries: number;
   private retryDelay: number;
 
   constructor() {
-    this.baseURL = agentSwarmConfig.baseURL;
-    this.streamTimeout = agentSwarmConfig.streamTimeout;
-    this.maxRetries = agentSwarmConfig.maxRetries;
-    this.retryDelay = agentSwarmConfig.retryDelay;
+    this.baseURL = agentCoreConfig.baseURL;
+    this.streamTimeout = agentCoreConfig.streamTimeout;
+    this.maxRetries = agentCoreConfig.maxRetries;
+    this.retryDelay = agentCoreConfig.retryDelay;
 
     logger.info(`Initialized Agent-Core Engine with base URL: ${this.baseURL}`);
   }
@@ -131,7 +131,7 @@ export class AgentSwarmService {
 
   async initChat(token: string, context?: ClientContext): Promise<void> {
     try {
-      logger.info('Initializing agent-swarm chat session');
+      logger.info('Initializing agent-core chat session');
 
       await this.retryRequest(async () => {
         const response = await fetch(`${this.baseURL}/chat/init`, {
@@ -147,9 +147,9 @@ export class AgentSwarmService {
         await this.handleResponse(response);
       }, 'initChat');
 
-      logger.info('Agent-swarm chat session initialized successfully');
+      logger.info('Agent-core chat session initialized successfully');
     } catch (error) {
-      logger.error('Failed to initialize agent-swarm chat:', error);
+      logger.error('Failed to initialize agent-core chat:', error);
       throw error;
     }
   }
@@ -160,7 +160,7 @@ export class AgentSwarmService {
     context?: ClientContext
   ): Promise<ChatResponse> {
     try {
-      logger.info('Sending message to agent-swarm chat');
+      logger.info('Sending message to agent-core chat');
 
       return await this.retryRequest(async () => {
         const response = await fetch(`${this.baseURL}/chat`, {
@@ -176,7 +176,7 @@ export class AgentSwarmService {
         return await this.handleResponse<ChatResponse>(response);
       }, 'chat');
     } catch (error) {
-      logger.error('Failed to send message to agent-swarm:', error);
+      logger.error('Failed to send message to agent-core:', error);
       throw error;
     }
   }
@@ -195,7 +195,7 @@ export class AgentSwarmService {
       let timeoutId: NodeJS.Timeout | null = null;
 
       try {
-        logger.info(`Starting agent-swarm chat stream (attempt ${attempt})`);
+        logger.info(`Starting agent-core chat stream (attempt ${attempt})`);
 
         // Create local AbortController for timeout management
         const controller = new AbortController();
@@ -349,7 +349,7 @@ export class AgentSwarmService {
         }
 
         logger.error(
-          `Agent-swarm chat stream attempt ${attempt} failed:`,
+          `Agent-core chat stream attempt ${attempt} failed:`,
           error
         );
 
@@ -382,7 +382,7 @@ export class AgentSwarmService {
     context?: ClientContext
   ): Promise<HistoryResponse> {
     try {
-      logger.info('Fetching agent-swarm chat history');
+      logger.info('Fetching agent-core chat history');
 
       return await this.retryRequest(async () => {
         const response = await fetch(`${this.baseURL}/chat/history`, {
@@ -397,14 +397,14 @@ export class AgentSwarmService {
         return await this.handleResponse<HistoryResponse>(response);
       }, 'getHistory');
     } catch (error) {
-      logger.error('Failed to fetch agent-swarm chat history:', error);
+      logger.error('Failed to fetch agent-core chat history:', error);
       throw error;
     }
   }
 
   async clearHistory(token: string, context?: ClientContext): Promise<void> {
     try {
-      logger.info('Clearing agent-swarm chat history');
+      logger.info('Clearing agent-core chat history');
 
       await this.retryRequest(async () => {
         const response = await fetch(`${this.baseURL}/chat/history`, {
@@ -419,9 +419,9 @@ export class AgentSwarmService {
         await this.handleResponse(response);
       }, 'clearHistory');
 
-      logger.info('Agent-swarm chat history cleared successfully');
+      logger.info('Agent-core chat history cleared successfully');
     } catch (error) {
-      logger.error('Failed to clear agent-swarm chat history:', error);
+      logger.error('Failed to clear agent-core chat history:', error);
       throw error;
     }
   }
@@ -431,7 +431,7 @@ export class AgentSwarmService {
     context?: ClientContext
   ): Promise<ModelsResponse> {
     try {
-      logger.info('Fetching available agent-swarm models');
+      logger.info('Fetching available agent-core models');
 
       return await this.retryRequest(async () => {
         const response = await fetch(`${this.baseURL}/models`, {
@@ -446,14 +446,14 @@ export class AgentSwarmService {
         return await this.handleResponse<ModelsResponse>(response);
       }, 'getModels');
     } catch (error) {
-      logger.error('Failed to fetch agent-swarm models:', error);
+      logger.error('Failed to fetch agent-core models:', error);
       throw error;
     }
   }
 
   async healthCheck(context?: ClientContext): Promise<HealthResponse> {
     try {
-      logger.info('Performing agent-swarm health check');
+      logger.info('Performing agent-core health check');
 
       return await this.retryRequest(async () => {
         const response = await fetch(`${this.baseURL}/health`, {
@@ -468,7 +468,7 @@ export class AgentSwarmService {
         return await this.handleResponse<HealthResponse>(response);
       }, 'healthCheck');
     } catch (error) {
-      logger.error('Agent-swarm health check failed:', error);
+      logger.error('Agent-core health check failed:', error);
       throw error;
     }
   }

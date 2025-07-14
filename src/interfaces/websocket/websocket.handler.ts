@@ -298,7 +298,7 @@ export class WebSocketHandler {
             type: 'auth_required',
             message: 'Authentication expired. Please sign in again.',
           });
-        } else if (errorMessage.includes('agent-swarm')) {
+        } else if (errorMessage.includes('agent-core')) {
           WebSocketGateway.sendError(
             ws,
             'AI service temporarily unavailable. Please try again.'
@@ -359,7 +359,7 @@ export class WebSocketHandler {
             type: 'auth_required',
             message: 'Authentication expired. Please sign in again.',
           });
-        } else if (errorMessage.includes('agent-swarm')) {
+        } else if (errorMessage.includes('agent-core')) {
           WebSocketGateway.sendError(ws, 'AI service error occurred');
         } else {
           WebSocketGateway.sendError(ws, 'Connection error occurred');

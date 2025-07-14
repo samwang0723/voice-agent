@@ -73,6 +73,7 @@ class ZenApp extends EventEmitter {
     this.isListening = false;
     this.isVadReady = false;
     this.isAuthenticated = false;
+    this.lastLocationMessage = null; // Add this line
 
     // Initialization promise to prevent multiple init calls
     this.initPromise = null;
@@ -124,17 +125,22 @@ class ZenApp extends EventEmitter {
       console.log('📦 Step 5: Initializing modules...');
       await this._initializeModules();
 
-      // Step 6: Bootstrap authentication
-      console.log('🔐 Step 6: Bootstrapping authentication...');
-      await this._bootstrapAuthentication();
+      // Step 6 & 8: Parallelize authentication and VAD initialization for faster startup
+      console.log(
+        '🚀 Kicking off authentication and VAD initialization in parallel...'
+      );
+      // We run authentication and VAD initialization at the same time because
+      // they are independent and both can be time-consuming. This speeds up
+      // the application's readiness.
+      await Promise.all([
+        this._bootstrapAuthentication(),
+        this._initializeVAD(),
+      ]);
+      console.log('✅ Parallel initialization of auth and VAD complete.');
 
       // Step 7: Setup event listeners
       console.log('👂 Step 7: Setting up event listeners...');
       this._setupEventListeners();
-
-      // Step 8: auto-initialize VAD, for faster startup
-      console.log('🎤 Step 8: Initializing VAD...');
-      await this._initializeVAD();
 
       // Step 9: Don't auto-connect, wait for user interaction
       // await this._connectAndStart();
@@ -160,30 +166,34 @@ class ZenApp extends EventEmitter {
         if (this.isMobile) {
           ONNX_CONFIG.numThreads = 1; // Force single thread on mobile
           ONNX_CONFIG.simd = false; // Disable SIMD on mobile for compatibility
+          ONNX_CONFIG.logLevel = 'error'; // Suppress verbose initializer warnings
           console.log('📱 Applying mobile-specific ONNX configuration');
         }
 
         Object.assign(ort.env.wasm, ONNX_CONFIG);
         ort.env.executionProviders = ONNX_CONFIG.executionProviders;
         ort.env.logLevel = ONNX_CONFIG.logLevel;
-        console.log('🧠 ONNX Runtime configured for compatibility mode');
+
+        const versionMatch = ONNX_CONFIG.wasmPaths.match(
+          /onnxruntime-web@([^/]+)/
+        );
+        const version = versionMatch ? versionMatch[1] : 'unknown';
+
+        console.log(
+          `🧠 ONNX Runtime configured (version: ${version}, compatibility mode)`
+        );
       } else {
         console.warn(
-          '⚠️ ONNX Runtime not available - this may cause AI processing failures'
+          '⚠️ ONNX Runtime not available - this may cause AI processing failures',
+          'Mobile browser may not support ONNX Runtime - consider desktop browser for full functionality'
         );
-        if (this.isMobile) {
-          console.warn(
-            '📱 Mobile browser may not support ONNX Runtime - consider desktop browser for full functionality'
-          );
-        }
       }
     } catch (error) {
-      console.error('❌ Failed to configure ONNX Runtime:', error);
-      if (this.isMobile) {
-        console.warn(
-          '📱 Mobile ONNX configuration failed - some features may not work'
-        );
-      }
+      console.error(
+        '❌ Failed to configure ONNX Runtime:',
+        error,
+        'Mobile ONNX configuration failed - some features may not work'
+      );
       // Don't throw here, let the app continue with degraded functionality
     }
   }
@@ -298,12 +308,11 @@ class ZenApp extends EventEmitter {
       .map((result) => result.value.script);
 
     if (inaccessibleScripts.length > 0) {
-      console.error('🚨 Inaccessible scripts detected:', inaccessibleScripts);
-      if (this.isMobile) {
-        console.error(
-          '📱 Mobile browsers may have stricter security policies for script loading'
-        );
-      }
+      console.error(
+        '🚨 Inaccessible scripts detected:',
+        inaccessibleScripts,
+        'Mobile browsers may have stricter security policies for script loading'
+      );
     }
   }
 
@@ -447,7 +456,6 @@ class ZenApp extends EventEmitter {
     // Auth events
     this.auth.on('authenticated', (event) => {
       this.isAuthenticated = true;
-      this.ui.hideLoginScreen();
       this.ui.showMainInterface();
 
       // Show authentication success message
@@ -677,9 +685,7 @@ class ZenApp extends EventEmitter {
       );
 
       if (isAuthenticated) {
-        // If already authenticated, show main interface directly
-        this.ui.hideLoginScreen();
-        this.ui.showMainInterface();
+        // If already authenticated, the 'authenticated' event will handle showing the main UI.
         this.ui.showMessage('Already authenticated', 'system');
       } else {
         // Only show login screen if not authenticated
@@ -1168,6 +1174,13 @@ class ZenApp extends EventEmitter {
 
       case 'barge-in-ack':
         this.ui.showMessage('Barge-in acknowledged', 'info');
+        break;
+
+      case 'location_update':
+        if (data.message && data.message !== this.lastLocationMessage) {
+          this.ui.showMessage(data.message, 'system');
+          this.lastLocationMessage = data.message;
+        }
         break;
 
       default:

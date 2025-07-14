@@ -11,6 +11,7 @@ class Transport extends EventTarget {
     this.maxReconnectAttempts = 3;
     this.reconnectDelay = 2000;
     this.bearerToken = null; // Store bearer token for reconnection
+    this.lastContext = null; // Add this line to track the last sent context
   }
 
   // Public API Methods
@@ -104,13 +105,15 @@ class Transport extends EventTarget {
    * @param {Object} context - Context object with datetime, timezone, etc.
    */
   sendAudioContext(context) {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    // Only send context if it's different from the last one
+    if (JSON.stringify(context) !== JSON.stringify(this.lastContext)) {
       this.ws.send(
         JSON.stringify({
           type: 'audio-context',
           context: context,
         })
       );
+      this.lastContext = context; // Update last sent context
     }
   }
 

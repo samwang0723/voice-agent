@@ -11,7 +11,7 @@ import {
   getStreamingTTSService,
 } from '../domain/audio/audio.factory';
 import { transcriptionConfigs } from '../config';
-import { AgentSwarmService } from '../infrastructure/ai/agentSwarm.service';
+import { AgentCoreService } from '../infrastructure/ai/agentCore.service';
 
 // Map TTS engine names to their streaming service keys
 const streamProviderMap: Record<string, string> = {
@@ -28,11 +28,9 @@ export class VoiceAgentService {
 
   constructor(
     private readonly conversationRepository: IConversationRepository,
-    private readonly agentSwarmService: AgentSwarmService
+    private readonly agentCoreService: AgentCoreService
   ) {
-    logger.info(
-      'VoiceAgentService initialized with dual-AI runtime (local + agent-swarm)'
-    );
+    logger.info('VoiceAgentService initialized');
   }
 
   private startNewSessionControllers(sessionId: string): {
@@ -153,13 +151,13 @@ export class VoiceAgentService {
     });
 
     // Determine backend based on conditions
-    const selectedBackend = isAuthenticated ? 'agent-swarm' : 'auth-prompt';
+    const selectedBackend = isAuthenticated ? 'agent-core' : 'auth-prompt';
 
     try {
-      if (selectedBackend === 'agent-swarm') {
-        // Tools detected and user is authenticated - use agent-swarm
+      if (selectedBackend === 'agent-core') {
+        // Tools detected and user is authenticated - use agent-core
         logger.debug(
-          `[${conversationId}] Using agent-swarm AI (tools detected, authenticated) in ${chatMode} mode`
+          `[${conversationId}] Using agent-core AI (tools detected, authenticated) in ${chatMode} mode`
         );
 
         // Add current datetime to context for enhanced responses
@@ -171,7 +169,7 @@ export class VoiceAgentService {
         if (chatMode === 'stream') {
           // Streaming mode - use chatStream and handle real-time responses
           logger.debug(
-            `[${conversationId}] Generating streaming response using agent-swarm with session: ${context.session.id}`
+            `[${conversationId}] Generating streaming response using agent-core with session: ${context.session.id}`
           );
 
           const chunks: string[] = [];
@@ -200,7 +198,7 @@ export class VoiceAgentService {
                   logger.debug(
                     `[${conversationId}] Starting independent text streaming`
                   );
-                  for await (const chunk of this.agentSwarmService.chatStream(
+                  for await (const chunk of this.agentCoreService.chatStream(
                     transcript,
                     context.session.bearerToken,
                     enhancedContext,
@@ -324,7 +322,7 @@ export class VoiceAgentService {
               });
             } else {
               // No streaming TTS available, just stream text
-              for await (const chunk of this.agentSwarmService.chatStream(
+              for await (const chunk of this.agentCoreService.chatStream(
                 transcript,
                 context.session.bearerToken,
                 enhancedContext,
@@ -353,9 +351,9 @@ export class VoiceAgentService {
         } else {
           // Single mode - use regular chat
           logger.debug(
-            `[${conversationId}] Generating response using agent-swarm with session: ${context.session.id}`
+            `[${conversationId}] Generating response using agent-core with session: ${context.session.id}`
           );
-          const response = await this.agentSwarmService.chat(
+          const response = await this.agentCoreService.chat(
             transcript,
             context.session.bearerToken,
             enhancedContext
@@ -364,7 +362,7 @@ export class VoiceAgentService {
         }
 
         logger.debug(
-          `[${conversationId}] Agent-swarm AI Response: "${aiResponse}"`
+          `[${conversationId}] Agent-core AI Response: "${aiResponse}"`
         );
       } else {
         // Tools detected but user is not authenticated - prompt for authentication

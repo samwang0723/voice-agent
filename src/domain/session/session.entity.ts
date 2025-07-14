@@ -7,7 +7,7 @@ export class Session {
   public ttsEngine: string = 'elevenlabs';
   public chatMode: 'single' | 'stream' = 'single';
   public bearerToken?: string;
-  public swarmInitialized: boolean = false;
+  public coreInitialized: boolean = false;
 
   constructor(
     public readonly id: string,

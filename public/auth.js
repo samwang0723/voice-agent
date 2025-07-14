@@ -1,5 +1,5 @@
 // OAuth Configuration
-const AGENT_SWARM_API = 'https://50c21f73c5ca.ngrok-free.app/api/v1';
+const AGENT_CORE_API = 'http://localhost:3030/api/v1';
 const OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/userinfo.email',
@@ -103,7 +103,7 @@ class AuthModule extends EventTarget {
       const redirectUri = `${window.location.origin}${window.location.pathname}`;
 
       const initiateResponse = await fetch(
-        `${AGENT_SWARM_API}/auth/oauth/initiate`,
+        `${AGENT_CORE_API}/auth/oauth/initiate`,
         {
           method: 'POST',
           headers: {
@@ -216,7 +216,7 @@ class AuthModule extends EventTarget {
 
       const redirectUri = `${window.location.origin}${window.location.pathname}`;
 
-      const tokenResponse = await fetch(`${AGENT_SWARM_API}/auth/oauth/token`, {
+      const tokenResponse = await fetch(`${AGENT_CORE_API}/auth/oauth/token`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

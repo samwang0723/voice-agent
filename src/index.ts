@@ -9,8 +9,8 @@ process.on('unhandledRejection', (reason, promise) => {
 // Apply WebSocket patches for third-party library compatibility
 applyWebSocketPatches();
 
-import { serverConfig, agentSwarmConfig } from './config';
-import { AgentSwarmService } from './infrastructure/ai/agentSwarm.service';
+import { serverConfig, agentCoreConfig } from './config';
+import { AgentCoreService } from './infrastructure/ai/agentCore.service.ts';
 import { InMemoryConversationRepository } from './infrastructure/repositories/inMemoryConversation.repository';
 import { InMemorySessionRepository } from './infrastructure/repositories/inMemorySession.repository';
 import { VoiceAgentService } from './application/voiceAgent.service';
@@ -22,12 +22,12 @@ const sessionRepository = new InMemorySessionRepository();
 const conversationRepository = new InMemoryConversationRepository();
 
 // 2. Initialize external services (AI) - Agent-Core Engine
-const agentSwarmService = new AgentSwarmService();
+const agentCoreService = new AgentCoreService();
 
-logger.info(`Agent-Swarm API URL: ${agentSwarmConfig.baseURL}`);
-logger.info(`Stream timeout: ${agentSwarmConfig.streamTimeout}ms`);
-logger.info(`Max retries: ${agentSwarmConfig.maxRetries}`);
-logger.info('Agent-Swarm AI initialized successfully');
+logger.info(`Agent-Core API URL: ${agentCoreConfig.baseURL}`);
+logger.info(`Stream timeout: ${agentCoreConfig.streamTimeout}ms`);
+logger.info(`Max retries: ${agentCoreConfig.maxRetries}`);
+logger.info('Agent-Core AI initialized successfully');
 logger.info(
   'Enhanced cancellation mechanism enabled for both AI streaming and TTS operations'
 );
@@ -35,7 +35,7 @@ logger.info(
 // 3. Initialize application service
 const voiceAgentService = new VoiceAgentService(
   conversationRepository,
-  agentSwarmService
+  agentCoreService
 );
 
 // 4. Initialize WebSocket handler

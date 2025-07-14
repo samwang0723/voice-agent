@@ -119,17 +119,17 @@ export const streamingAudioConfig: StreamingAudioConfig = {
   sampleWidth: 2, // bytes per 16-bit sample
 };
 
-// Agent-Swarm Configuration
-export interface AgentSwarmConfig {
+// Agent-core Configuration
+export interface AgentCoreConfig {
   baseURL: string;
   streamTimeout: number;
   maxRetries: number;
   retryDelay: number;
 }
 
-export const agentSwarmConfig: AgentSwarmConfig = {
-  baseURL: process.env.AGENT_SWARM_API_URL || 'http://localhost:3030/api/v1',
-  streamTimeout: parseInt(process.env.AGENT_SWARM_STREAM_TIMEOUT || '30000'),
-  maxRetries: parseInt(process.env.AGENT_SWARM_MAX_RETRIES || '3'),
-  retryDelay: parseInt(process.env.AGENT_SWARM_RETRY_DELAY || '1000'),
+export const agentCoreConfig: AgentCoreConfig = {
+  baseURL: process.env.AGENT_CORE_API_URL || 'http://localhost:3030/api/v1',
+  streamTimeout: parseInt(process.env.AGENT_CORE_STREAM_TIMEOUT || '30000'),
+  maxRetries: parseInt(process.env.AGENT_CORE_MAX_RETRIES || '3'),
+  retryDelay: parseInt(process.env.AGENT_CORE_RETRY_DELAY || '1000'),
 };
