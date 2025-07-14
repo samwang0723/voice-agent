@@ -47,7 +47,7 @@ export class MinimaxStreamingTextToSpeechService
     speed: 1,
     vol: 1,
     pitch: 0,
-    emotion: 'neutral',
+    emotion: 'happy',
   };
 
   private readonly defaultAudioSettings: MinimaxAudioSettings = {
