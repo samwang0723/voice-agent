@@ -30,10 +30,12 @@ export class MinimaxStreamingTextToSpeechService
   implements IStreamingTextToSpeechService
 {
   private ws: WebSocket | null = null;
+  private chunkBuffer: Buffer = Buffer.alloc(0);
   private carryoverBuffer: Buffer = Buffer.alloc(0);
   private isTaskStarted: boolean = false;
 
-  // Audio processing constants
+  // Audio processing constants - matching ElevenLabs for consistency
+  private static readonly OUTPUT_CHUNK_SIZE = 16000; // 16KB chunks for ~80ms at 16kHz mono PCM
   private static readonly SAMPLE_WIDTH = 2; // 2 bytes per 16-bit PCM sample
   private static readonly WS_URL = 'wss://api.minimax.io/ws/v1/t2a_v2';
 
@@ -226,6 +228,7 @@ export class MinimaxStreamingTextToSpeechService
       }
 
       // Reset buffers for new synthesis session
+      this.chunkBuffer = Buffer.alloc(0);
       this.carryoverBuffer = Buffer.alloc(0);
       this.isTaskStarted = false;
 
@@ -235,83 +238,16 @@ export class MinimaxStreamingTextToSpeechService
       // Start the task first
       await this.startTask();
 
-      // Set up audio chunk collection
-      const audioChunkQueue: Buffer[] = [];
-      let audioCollectionFinished = false;
-      let audioCollectionError: Error | null = null;
-
       // Store reference to current WebSocket to avoid null access issues
       const currentWs = this.ws;
       if (!currentWs) {
         throw new Error('WebSocket not available');
       }
 
-      // Track audio statistics
-      let audioMessageCount = 0;
-      let totalAudioBytesReceived = 0;
-
-      // Set up message handler for audio chunks
-      const messageHandler = (event: MessageEvent) => {
-        try {
-          if (abortSignal?.aborted) {
-            return;
-          }
-
-          const response: MinimaxTaskResponse = JSON.parse(event.data);
-
-          // Log all messages for debugging
-          logger.debug(
-            `Minimax message: ${response.event}${response.is_final ? ' (final)' : ''}`
-          );
-
-          if (response.data?.audio) {
-            audioMessageCount++;
-            const hexAudio = response.data.audio;
-            const audioBuffer = this.hexToBuffer(hexAudio);
-            totalAudioBytesReceived += audioBuffer.length;
-
-            logger.debug(
-              `Audio message #${audioMessageCount}: ${audioBuffer.length} bytes (hex: ${hexAudio.length} chars, total received: ${totalAudioBytesReceived} bytes)`
-            );
-
-            // Process the audio chunk and add to queue
-            let chunksProduced = 0;
-            for (const chunk of this.processAudioChunk(audioBuffer)) {
-              audioChunkQueue.push(chunk);
-              chunksProduced++;
-            }
-
-            logger.debug(
-              `Produced ${chunksProduced} chunks, queue size: ${audioChunkQueue.length}`
-            );
-          }
-
-          // Check for errors
-          if (response.event === 'error') {
-            logger.error(`Minimax error: ${JSON.stringify(response)}`);
-            audioCollectionError = new Error(
-              `Minimax error: ${JSON.stringify(response)}`
-            );
-          }
-
-          if (response.is_final) {
-            logger.info(
-              `Minimax final message received. Total audio messages: ${audioMessageCount}, bytes: ${totalAudioBytesReceived}`
-            );
-            audioCollectionFinished = true;
-          }
-        } catch (error) {
-          logger.error('Error processing audio message:', error);
-          audioCollectionError = error as Error;
-        }
-      };
-
-      // Add message listener
-      currentWs.addEventListener('message', messageHandler);
-
       try {
-        // Accumulate all text chunks first (like Python example)
-        const allText: string[] = [];
+        // Process text chunks incrementally for better real-time performance
+        let accumulatedText = '';
+        let isFirstChunk = true;
 
         for await (const textChunk of textChunks) {
           if (abortSignal?.aborted) {
@@ -322,98 +258,48 @@ export class MinimaxStreamingTextToSpeechService
           }
 
           if (textChunk.trim() && !textChunk.startsWith('[')) {
-            allText.push(textChunk);
+            accumulatedText += textChunk;
+
+            // Check if we should start synthesis for accumulated text
+            const shouldSynthesize = this.shouldStartSynthesis(
+              accumulatedText,
+              isFirstChunk
+            );
+
+            if (shouldSynthesize) {
+              logger.info(
+                `Starting Minimax TTS synthesis for text: "${accumulatedText.substring(0, 50)}..." (${accumulatedText.length} chars)`
+              );
+
+              // Synthesize accumulated text and yield audio chunks
+              yield* this.synthesizeTextChunk(accumulatedText, abortSignal);
+
+              // Reset for next chunk
+              accumulatedText = '';
+              isFirstChunk = false;
+            }
           }
         }
 
-        // Send all text as one chunk
-        if (allText.length > 0) {
-          const fullText = allText.join(' ').trim();
+        // Synthesize any remaining text
+        if (accumulatedText.trim() && !abortSignal?.aborted) {
           logger.info(
-            `Sending full text to Minimax TTS: ${fullText.length} characters`
+            `Synthesizing remaining text: "${accumulatedText.substring(0, 50)}..." (${accumulatedText.length} chars)`
           );
-          await this.sendTextChunk(fullText);
+          yield* this.synthesizeTextChunk(accumulatedText, abortSignal);
         }
 
-        // Now wait for and yield audio chunks as they arrive
-        logger.debug('Text sent, starting audio collection...');
-
-        // Give Minimax a moment to start generating audio
-        await new Promise((resolve) => setTimeout(resolve, 100));
-
-        let waitingLoops = 0;
-        let totalChunksYielded = 0;
-
-        // Continue yielding audio chunks until we get the final message
-        while (
-          !audioCollectionFinished &&
-          !audioCollectionError &&
-          !abortSignal?.aborted
-        ) {
-          waitingLoops++;
-
-          // Yield any available audio chunks immediately
-          while (audioChunkQueue.length > 0) {
-            const chunk = audioChunkQueue.shift()!;
-            yield chunk;
-            totalChunksYielded++;
-            logger.debug(
-              `Yielded chunk ${totalChunksYielded}: ${chunk.length} bytes`
-            );
-          }
-
-          // Check if WebSocket closed unexpectedly
-          if (currentWs.readyState === WebSocket.CLOSED) {
-            logger.warn(
-              'WebSocket closed unexpectedly while waiting for audio'
-            );
-            break;
-          }
-
-          // Wait a bit for more audio chunks
-          await new Promise((resolve) => setTimeout(resolve, 10));
-
-          // Log progress every 100 loops (1 second)
-          if (waitingLoops % 100 === 0) {
-            logger.debug(
-              `Still waiting for audio... (${waitingLoops / 100}s elapsed, ${totalChunksYielded} chunks yielded)`
-            );
-          }
-        }
-
-        logger.info(
-          `Audio collection finished. Total chunks yielded: ${totalChunksYielded}`
-        );
-
-        // Yield any remaining audio chunks in the queue
-        let finalChunks = 0;
-        while (audioChunkQueue.length > 0) {
-          const chunk = audioChunkQueue.shift()!;
-          yield chunk;
-          finalChunks++;
-        }
-
-        if (finalChunks > 0) {
-          logger.debug(`Yielded ${finalChunks} final chunks from queue`);
-        }
-
-        // Send task_finish after audio collection is complete
+        // Send task_finish after all text chunks have been processed
         await this.finishTask();
 
         // Handle any remaining carryover
         yield* this.flushRemainingBuffer();
-
-        if (audioCollectionError) {
-          throw audioCollectionError;
-        }
       } finally {
-        // Remove message listener
-        if (currentWs && currentWs.readyState !== WebSocket.CLOSED) {
-          currentWs.removeEventListener('message', messageHandler);
-        }
+        // Cleanup is handled in closeConnection()
       }
 
       // Clean up buffers
+      this.chunkBuffer = Buffer.alloc(0);
       this.carryoverBuffer = Buffer.alloc(0);
     } catch (error) {
       if (error instanceof Error) {
@@ -491,81 +377,322 @@ export class MinimaxStreamingTextToSpeechService
     return buffer;
   }
 
-  private *processAudioChunk(inputBuffer: Buffer): IterableIterator<Buffer> {
-    // Minimal buffering to reduce chunk boundaries and noise
-    // This helps prevent clicks/pops from too many small chunks
+  private shouldStartSynthesis(text: string, isFirstChunk: boolean): boolean {
+    // Start synthesis on first chunk if we have some text
+    if (isFirstChunk && text.trim().length > 10) {
+      return true;
+    }
 
+    // Start synthesis when we hit sentence boundaries
+    const sentenceEnders = /[.!?]\s/;
+    if (sentenceEnders.test(text)) {
+      return true;
+    }
+
+    // Start synthesis when we have accumulated enough text (to avoid too many small chunks)
+    if (text.length > 100) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private async *synthesizeTextChunk(
+    text: string,
+    abortSignal?: AbortSignal
+  ): AsyncIterable<Buffer> {
+    if (!text.trim()) {
+      return;
+    }
+
+    // Skip special messages
+    if (text.startsWith('[') && text.endsWith(']')) {
+      logger.info(`Skipping streaming TTS for special message: ${text}`);
+      return;
+    }
+
+    try {
+      logger.debug(
+        `Minimax Streaming TTS starting synthesis for text chunk: "${text.substring(0, 50)}..."`
+      );
+
+      // Check if operation was cancelled before starting synthesis
+      if (abortSignal?.aborted) {
+        logger.info(
+          'Minimax Streaming TTS chunk synthesis was cancelled before starting'
+        );
+        return;
+      }
+
+      // Set up audio chunk collection for this text chunk
+      const audioChunkQueue: Buffer[] = [];
+      let audioCollectionFinished = false;
+      let audioCollectionError: Error | null = null;
+
+      // Store reference to current WebSocket
+      const currentWs = this.ws;
+      if (!currentWs || currentWs.readyState !== 1) {
+        // WebSocket.OPEN = 1
+        logger.warn('WebSocket not available for text chunk synthesis');
+        return;
+      }
+
+      // Track audio statistics for this chunk
+      let audioMessageCount = 0;
+      let totalAudioBytesReceived = 0;
+
+      // Set up message handler for this specific text chunk
+      const messageHandler = (event: MessageEvent) => {
+        try {
+          if (abortSignal?.aborted) {
+            return;
+          }
+
+          const response: MinimaxTaskResponse = JSON.parse(event.data);
+
+          logger.debug(
+            `Minimax chunk message: ${response.event}${response.is_final ? ' (final)' : ''}`
+          );
+
+          if (response.data?.audio) {
+            audioMessageCount++;
+            const hexAudio = response.data.audio;
+            const audioBuffer = this.hexToBuffer(hexAudio);
+            totalAudioBytesReceived += audioBuffer.length;
+
+            logger.debug(
+              `Chunk audio message #${audioMessageCount}: ${audioBuffer.length} bytes`
+            );
+
+            // Process the audio chunk and add to queue
+            for (const chunk of this.processAudioChunk(audioBuffer)) {
+              audioChunkQueue.push(chunk);
+            }
+          }
+
+          // Check for errors
+          if (response.event === 'error') {
+            logger.error(`Minimax chunk error: ${JSON.stringify(response)}`);
+            audioCollectionError = new Error(
+              `Minimax chunk error: ${JSON.stringify(response)}`
+            );
+          }
+
+          if (response.is_final) {
+            logger.info(
+              `Minimax chunk final message received. Audio messages: ${audioMessageCount}, bytes: ${totalAudioBytesReceived}`
+            );
+            audioCollectionFinished = true;
+          }
+        } catch (error) {
+          logger.error('Error processing chunk audio message:', error);
+          audioCollectionError = error as Error;
+        }
+      };
+
+      // Add message listener for this chunk
+      currentWs.addEventListener('message', messageHandler);
+
+      try {
+        // Send the text chunk
+        await this.sendTextChunk(text);
+
+        // Wait for and yield audio chunks as they arrive
+        logger.debug('Text chunk sent, collecting audio...');
+
+        let waitingLoops = 0;
+        let totalChunksYielded = 0;
+
+        // Continue yielding audio chunks until we get the final message for this chunk
+        while (
+          !audioCollectionFinished &&
+          !audioCollectionError &&
+          !abortSignal?.aborted
+        ) {
+          waitingLoops++;
+
+          // Yield any available audio chunks immediately
+          while (audioChunkQueue.length > 0) {
+            const chunk = audioChunkQueue.shift()!;
+            yield chunk;
+            totalChunksYielded++;
+            logger.debug(
+              `Yielded chunk ${totalChunksYielded}: ${chunk.length} bytes`
+            );
+          }
+
+          // Check if WebSocket closed unexpectedly
+          if ((currentWs.readyState as number) === WebSocket.CLOSED) {
+            logger.warn(
+              'WebSocket closed unexpectedly while waiting for chunk audio'
+            );
+            break;
+          }
+
+          // Wait a bit for more audio chunks
+          await new Promise((resolve) => setTimeout(resolve, 10));
+
+          // Timeout after reasonable wait (30 seconds)
+          if (waitingLoops > 3000) {
+            logger.warn('Timeout waiting for chunk audio completion');
+            break;
+          }
+        }
+
+        // Yield any remaining audio chunks in the queue
+        while (audioChunkQueue.length > 0) {
+          const chunk = audioChunkQueue.shift()!;
+          yield chunk;
+        }
+
+        logger.debug(
+          `Completed text chunk synthesis. Total chunks yielded: ${totalChunksYielded}`
+        );
+
+        if (audioCollectionError) {
+          throw audioCollectionError;
+        }
+      } finally {
+        // Remove message listener for this chunk
+        if (
+          currentWs &&
+          (currentWs.readyState as number) !== WebSocket.CLOSED
+        ) {
+          currentWs.removeEventListener('message', messageHandler);
+        }
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          logger.info('Minimax Streaming TTS chunk synthesis was cancelled');
+          return;
+        }
+      }
+      logger.error('Minimax Streaming TTS chunk synthesis failed:', error);
+      throw error;
+    }
+  }
+
+  private *processAudioChunk(inputBuffer: Buffer): IterableIterator<Buffer> {
     logger.debug(`Processing audio chunk: ${inputBuffer.length} bytes`);
 
-    // Handle any carryover from previous chunk for alignment
+    // Handle carryover from previous chunk if any
     if (this.carryoverBuffer.length > 0) {
       inputBuffer = Buffer.concat([this.carryoverBuffer, inputBuffer]);
       this.carryoverBuffer = Buffer.alloc(0);
-      logger.debug(`Merged carryover, new size: ${inputBuffer.length} bytes`);
-    }
-
-    // Define minimum chunk size to reduce audio artifacts
-    // 4KB provides ~125ms at 16kHz which balances latency vs quality
-    const MIN_CHUNK_SIZE = 4096;
-
-    // If we have less than minimum, save it for next time
-    if (inputBuffer.length < MIN_CHUNK_SIZE) {
-      this.carryoverBuffer = inputBuffer;
       logger.debug(
-        `Buffering ${inputBuffer.length} bytes (below minimum ${MIN_CHUNK_SIZE})`
+        `Merged carryover, new buffer size: ${inputBuffer.length} bytes`
       );
-      return; // Don't yield yet
     }
 
-    // Process chunks of at least MIN_CHUNK_SIZE
-    while (inputBuffer.length >= MIN_CHUNK_SIZE) {
-      // Take a chunk (up to 16KB for consistent sizing)
-      const chunkSize = Math.min(inputBuffer.length, 16384);
+    // Check alignment and handle odd-length chunks
+    if (
+      inputBuffer.length % MinimaxStreamingTextToSpeechService.SAMPLE_WIDTH !==
+      0
+    ) {
+      logger.debug(`Handling odd-length chunk: ${inputBuffer.length} bytes`);
 
-      // Ensure alignment for 16-bit samples
-      const alignedChunkSize =
-        Math.floor(
-          chunkSize / MinimaxStreamingTextToSpeechService.SAMPLE_WIDTH
-        ) * MinimaxStreamingTextToSpeechService.SAMPLE_WIDTH;
+      // Carry over the last byte to maintain alignment
+      this.carryoverBuffer = inputBuffer.subarray(inputBuffer.length - 1);
+      inputBuffer = inputBuffer.subarray(0, inputBuffer.length - 1);
 
-      const chunk = inputBuffer.subarray(0, alignedChunkSize);
-      inputBuffer = inputBuffer.subarray(alignedChunkSize);
-
-      logger.debug(`Yielding audio chunk: ${chunk.length} bytes`);
-      yield chunk;
+      logger.debug(
+        `Aligned chunk to ${inputBuffer.length} bytes, carrying over 1 byte`
+      );
     }
 
-    // Save any remaining data for next time
-    if (inputBuffer.length > 0) {
-      this.carryoverBuffer = inputBuffer;
-      logger.debug(`Saving ${inputBuffer.length} bytes for next chunk`);
+    // Append incoming buffer to chunk buffer
+    this.chunkBuffer = Buffer.concat([this.chunkBuffer, inputBuffer]);
+
+    // Yield consistent-sized chunks while we have enough data
+    while (
+      this.chunkBuffer.length >=
+      MinimaxStreamingTextToSpeechService.OUTPUT_CHUNK_SIZE
+    ) {
+      // Extract exactly OUTPUT_CHUNK_SIZE bytes
+      const outputChunk = this.chunkBuffer.subarray(
+        0,
+        MinimaxStreamingTextToSpeechService.OUTPUT_CHUNK_SIZE
+      );
+
+      // Ensure chunk is properly aligned for 16-bit PCM samples
+      if (
+        outputChunk.length %
+          MinimaxStreamingTextToSpeechService.SAMPLE_WIDTH !==
+        0
+      ) {
+        logger.warn(
+          `Output chunk alignment issue: ${outputChunk.length} bytes is not divisible by ${MinimaxStreamingTextToSpeechService.SAMPLE_WIDTH}`
+        );
+        // Hold back the last byte to maintain alignment
+        const alignedSize =
+          Math.floor(
+            outputChunk.length /
+              MinimaxStreamingTextToSpeechService.SAMPLE_WIDTH
+          ) * MinimaxStreamingTextToSpeechService.SAMPLE_WIDTH;
+        const alignedChunk = outputChunk.subarray(0, alignedSize);
+        this.chunkBuffer = Buffer.concat([
+          outputChunk.subarray(alignedSize),
+          this.chunkBuffer.subarray(
+            MinimaxStreamingTextToSpeechService.OUTPUT_CHUNK_SIZE
+          ),
+        ]);
+
+        if (alignedChunk.length > 0) {
+          logger.debug(
+            `Yielding aligned PCM chunk: ${alignedChunk.length} bytes`
+          );
+          yield alignedChunk;
+        }
+      } else {
+        // Update buffer to contain only remaining bytes
+        this.chunkBuffer = this.chunkBuffer.subarray(
+          MinimaxStreamingTextToSpeechService.OUTPUT_CHUNK_SIZE
+        );
+
+        logger.debug(
+          `Yielding consistent PCM chunk: ${outputChunk.length} bytes`
+        );
+        yield outputChunk;
+      }
     }
   }
 
   private *flushRemainingBuffer(): IterableIterator<Buffer> {
-    // Flush any remaining buffered data at the end of the stream
+    // Handle any remaining carryover first
     if (this.carryoverBuffer.length > 0) {
-      // Ensure alignment for final chunk
-      const alignedLength =
-        Math.floor(
-          this.carryoverBuffer.length /
-            MinimaxStreamingTextToSpeechService.SAMPLE_WIDTH
-        ) * MinimaxStreamingTextToSpeechService.SAMPLE_WIDTH;
-
-      if (alignedLength > 0) {
-        const finalChunk = this.carryoverBuffer.subarray(0, alignedLength);
-        logger.debug(`Flushing final audio chunk: ${finalChunk.length} bytes`);
-        yield finalChunk;
-      }
-
-      if (this.carryoverBuffer.length > alignedLength) {
-        logger.warn(
-          `Discarding ${this.carryoverBuffer.length - alignedLength} unaligned bytes at end of stream`
-        );
-      }
-
+      logger.warn(
+        `Discarding ${this.carryoverBuffer.length} byte carryover at end of stream`
+      );
       this.carryoverBuffer = Buffer.alloc(0);
     }
+
+    // Flush remaining buffered data
+    if (this.chunkBuffer.length === 0) {
+      return;
+    }
+
+    // Ensure final chunk is properly aligned
+    const alignedSize =
+      Math.floor(
+        this.chunkBuffer.length /
+          MinimaxStreamingTextToSpeechService.SAMPLE_WIDTH
+      ) * MinimaxStreamingTextToSpeechService.SAMPLE_WIDTH;
+
+    if (alignedSize > 0) {
+      const finalChunk = this.chunkBuffer.subarray(0, alignedSize);
+      logger.debug(`Flushing final PCM chunk: ${finalChunk.length} bytes`);
+      yield finalChunk;
+    }
+
+    if (this.chunkBuffer.length > alignedSize) {
+      logger.warn(
+        `Discarding ${this.chunkBuffer.length - alignedSize} unaligned bytes at end of stream`
+      );
+    }
+
+    // Clear the buffer
+    this.chunkBuffer = Buffer.alloc(0);
   }
 
   private async closeConnection(): Promise<void> {
@@ -583,5 +710,9 @@ export class MinimaxStreamingTextToSpeechService
 
     this.ws = null;
     this.isTaskStarted = false;
+
+    // Clean up buffers
+    this.chunkBuffer = Buffer.alloc(0);
+    this.carryoverBuffer = Buffer.alloc(0);
   }
 }
