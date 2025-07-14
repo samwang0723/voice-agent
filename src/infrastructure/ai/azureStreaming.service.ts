@@ -4,14 +4,25 @@ import type { IStreamingTextToSpeechService } from '../../domain/audio/audio.ser
 import type { TextToSpeechConfig } from '../../config';
 import logger from '../logger';
 
+// Connection context for each streaming request
+interface StreamingContext {
+  speechConfig: sdk.SpeechConfig | null;
+  sessionId: string;
+}
+
 export class AzureStreamingTextToSpeechService
   implements IStreamingTextToSpeechService
 {
-  private speechConfig: sdk.SpeechConfig | null = null;
+  private createStreamingContext(): StreamingContext {
+    return {
+      speechConfig: null,
+      sessionId: Math.random().toString(36).substring(2, 15),
+    };
+  }
 
-  private initializeSpeechConfig(): sdk.SpeechConfig {
-    if (this.speechConfig) {
-      return this.speechConfig;
+  private initializeSpeechConfig(context: StreamingContext): sdk.SpeechConfig {
+    if (context.speechConfig) {
+      return context.speechConfig;
     }
 
     const config = ttsConfigs.azure as TextToSpeechConfig;
@@ -29,35 +40,44 @@ export class AzureStreamingTextToSpeechService
     }
 
     // Use standard Speech SDK configuration for better compatibility
-    this.speechConfig = sdk.SpeechConfig.fromSubscription(
+    context.speechConfig = sdk.SpeechConfig.fromSubscription(
       config.apiKey,
       region
     );
 
     // Set the voice name
-    this.speechConfig.speechSynthesisVoiceName =
+    context.speechConfig.speechSynthesisVoiceName =
       config.voiceId || 'en-GB-OllieMultilingualNeural';
 
     // Set output format to high-quality PCM for streaming
-    this.speechConfig.speechSynthesisOutputFormat =
+    context.speechConfig.speechSynthesisOutputFormat =
       sdk.SpeechSynthesisOutputFormat.Raw16Khz16BitMonoPcm;
 
-    logger.info('Azure Streaming TTS configuration initialized');
-    return this.speechConfig;
+    logger.info(
+      `[${context.sessionId}] Azure Streaming TTS configuration initialized`
+    );
+    return context.speechConfig;
   }
 
   async *synthesizeStream(
     textChunks: AsyncIterable<string>,
     abortSignal?: AbortSignal
   ): AsyncIterable<Buffer> {
+    // Create a new context for this streaming request
+    const context = this.createStreamingContext();
+
     try {
       // Check if operation was cancelled before starting
       if (abortSignal?.aborted) {
         logger.info(
-          'Azure Streaming TTS operation was cancelled before starting'
+          `[${context.sessionId}] Azure Streaming TTS operation was cancelled before starting`
         );
         return;
       }
+
+      logger.info(
+        `[${context.sessionId}] Starting new Azure streaming session`
+      );
 
       // Accumulate text chunks for synthesis
       let accumulatedText = '';
@@ -68,7 +88,7 @@ export class AzureStreamingTextToSpeechService
       for await (const textChunk of textChunks) {
         if (abortSignal?.aborted) {
           logger.info(
-            'Azure Streaming TTS operation was cancelled during text collection'
+            `[${context.sessionId}] Azure Streaming TTS operation was cancelled during text collection`
           );
           return;
         }
@@ -86,7 +106,11 @@ export class AzureStreamingTextToSpeechService
 
           if (shouldSynthesize) {
             // Synthesize accumulated text and yield audio chunks
-            yield* this.synthesizeTextChunk(accumulatedText, abortSignal);
+            yield* this.synthesizeTextChunk(
+              context,
+              accumulatedText,
+              abortSignal
+            );
 
             // Reset for next chunk
             accumulatedText = '';
@@ -97,23 +121,25 @@ export class AzureStreamingTextToSpeechService
 
       // Synthesize any remaining text
       if (accumulatedText.trim() && !abortSignal?.aborted) {
-        yield* this.synthesizeTextChunk(accumulatedText, abortSignal);
+        yield* this.synthesizeTextChunk(context, accumulatedText, abortSignal);
       }
     } catch (error) {
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
-          logger.info('Azure Streaming TTS operation was cancelled');
+          logger.info(
+            `[${context.sessionId}] Azure Streaming TTS operation was cancelled`
+          );
           return;
         }
         if (
           error.message.includes('Azure Speech API key') ||
           error.message.includes('Azure Speech region')
         ) {
-          logger.error(error.message);
+          logger.error(`[${context.sessionId}] ${error.message}`);
           return;
         }
       }
-      logger.error('Azure Streaming TTS failed:', error);
+      logger.error(`[${context.sessionId}] Azure Streaming TTS failed:`, error);
       throw error;
     }
   }
@@ -139,6 +165,7 @@ export class AzureStreamingTextToSpeechService
   }
 
   private async *synthesizeTextChunk(
+    context: StreamingContext,
     text: string,
     abortSignal?: AbortSignal
   ): AsyncIterable<Buffer> {
@@ -148,14 +175,16 @@ export class AzureStreamingTextToSpeechService
 
     // Skip special messages
     if (text.startsWith('[') && text.endsWith(']')) {
-      logger.info(`Skipping streaming TTS for special message: ${text}`);
+      logger.info(
+        `[${context.sessionId}] Skipping streaming TTS for special message: ${text}`
+      );
       return;
     }
 
     try {
-      const speechConfig = this.initializeSpeechConfig();
+      const speechConfig = this.initializeSpeechConfig(context);
       logger.debug(
-        `Azure Streaming TTS starting synthesis for text: "${text.substring(0, 50)}..."`
+        `[${context.sessionId}] Azure Streaming TTS starting synthesis for text: "${text.substring(0, 50)}..."`
       );
 
       // Use a simple approach: synthesize to audio data and yield it in chunks
@@ -169,19 +198,21 @@ export class AzureStreamingTextToSpeechService
             return;
           }
 
-          logger.debug('Azure Streaming TTS calling speakTextAsync...');
+          logger.debug(
+            `[${context.sessionId}] Azure Streaming TTS calling speakTextAsync...`
+          );
           synthesizer.speakTextAsync(
             text.replace(/\s+/g, ' ').trim(),
             (result) => {
               logger.debug(
-                `Azure Streaming TTS synthesis callback - reason: ${result.reason}, audioData length: ${result.audioData ? result.audioData.byteLength : 'null'}`
+                `[${context.sessionId}] Azure Streaming TTS synthesis callback - reason: ${result.reason}, audioData length: ${result.audioData ? result.audioData.byteLength : 'null'}`
               );
               synthesizer.close();
               resolve(result);
             },
             (error) => {
               logger.error(
-                `Azure Streaming TTS synthesis error callback: ${error}`
+                `[${context.sessionId}] Azure Streaming TTS synthesis error callback: ${error}`
               );
               synthesizer.close();
 
@@ -199,18 +230,20 @@ export class AzureStreamingTextToSpeechService
       );
 
       if (abortSignal?.aborted) {
-        logger.info('Azure Streaming TTS chunk synthesis was cancelled');
+        logger.info(
+          `[${context.sessionId}] Azure Streaming TTS chunk synthesis was cancelled`
+        );
         return;
       }
 
       logger.debug(
-        `Azure Streaming TTS synthesis result reason: ${result.reason}`
+        `[${context.sessionId}] Azure Streaming TTS synthesis result reason: ${result.reason}`
       );
 
       if (result.reason === sdk.ResultReason.SynthesizingAudioCompleted) {
         const audioData = result.audioData;
         logger.debug(
-          `Azure Streaming TTS audioData: ${audioData ? `${audioData.byteLength} bytes` : 'null'}`
+          `[${context.sessionId}] Azure Streaming TTS audioData: ${audioData ? `${audioData.byteLength} bytes` : 'null'}`
         );
 
         if (audioData && audioData.byteLength > 0) {
@@ -219,44 +252,44 @@ export class AzureStreamingTextToSpeechService
           const chunkSize = 16000; // 16KB chunks (approximately 80ms of 16kHz mono PCM audio)
 
           logger.info(
-            `Azure Streaming TTS synthesis completed for text: "${text.substring(0, 50)}..." - ${buffer.length} bytes total`
+            `[${context.sessionId}] Azure Streaming TTS synthesis completed for text: "${text.substring(0, 50)}..." - ${buffer.length} bytes total`
           );
 
           // Yield the audio in chunks to simulate streaming
           for (let i = 0; i < buffer.length; i += chunkSize) {
             if (abortSignal?.aborted) {
               logger.info(
-                'Azure Streaming TTS chunk synthesis was cancelled during chunking'
+                `[${context.sessionId}] Azure Streaming TTS chunk synthesis was cancelled during chunking`
               );
               return;
             }
 
             const chunk = buffer.slice(i, i + chunkSize);
             logger.debug(
-              `Azure Streaming TTS received audio chunk: ${chunk.length} bytes`
+              `[${context.sessionId}] Azure Streaming TTS received audio chunk: ${chunk.length} bytes`
             );
             yield chunk;
           }
 
           logger.debug(
-            `Azure Streaming TTS completed yielding all chunks for text`
+            `[${context.sessionId}] Azure Streaming TTS completed yielding all chunks for text`
           );
         } else {
           logger.warn(
-            `Azure Streaming TTS synthesis completed but no audio data received for text: "${text.substring(0, 50)}..."`
+            `[${context.sessionId}] Azure Streaming TTS synthesis completed but no audio data received for text: "${text.substring(0, 50)}..."`
           );
         }
       } else if (result.reason === sdk.ResultReason.Canceled) {
         const cancellation = sdk.CancellationDetails.fromResult(result);
         logger.error(
-          `Azure Streaming TTS synthesis canceled: ${cancellation.errorDetails}`
+          `[${context.sessionId}] Azure Streaming TTS synthesis canceled: ${cancellation.errorDetails}`
         );
         throw new Error(
           `Azure Streaming TTS synthesis canceled: ${cancellation.errorDetails}`
         );
       } else {
         logger.error(
-          `Azure Streaming TTS synthesis failed with reason: ${result.reason}`
+          `[${context.sessionId}] Azure Streaming TTS synthesis failed with reason: ${result.reason}`
         );
         throw new Error(
           `Azure Streaming TTS synthesis failed with reason: ${result.reason}`
@@ -265,11 +298,16 @@ export class AzureStreamingTextToSpeechService
     } catch (error) {
       if (error instanceof Error) {
         if (error.message === 'AbortError' || error.name === 'AbortError') {
-          logger.info('Azure Streaming TTS chunk synthesis was cancelled');
+          logger.info(
+            `[${context.sessionId}] Azure Streaming TTS chunk synthesis was cancelled`
+          );
           return;
         }
       }
-      logger.error('Azure Streaming TTS chunk synthesis failed:', error);
+      logger.error(
+        `[${context.sessionId}] Azure Streaming TTS chunk synthesis failed:`,
+        error
+      );
       throw error;
     }
   }

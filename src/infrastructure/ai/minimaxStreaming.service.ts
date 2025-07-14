@@ -26,14 +26,18 @@ interface MinimaxTaskResponse {
   is_final?: boolean;
 }
 
+// Connection context for each streaming request
+interface StreamingContext {
+  ws: WebSocket | null;
+  chunkBuffer: Buffer;
+  carryoverBuffer: Buffer;
+  isTaskStarted: boolean;
+  sessionId: string;
+}
+
 export class MinimaxStreamingTextToSpeechService
   implements IStreamingTextToSpeechService
 {
-  private ws: WebSocket | null = null;
-  private chunkBuffer: Buffer = Buffer.alloc(0);
-  private carryoverBuffer: Buffer = Buffer.alloc(0);
-  private isTaskStarted: boolean = false;
-
   // Audio processing constants - matching ElevenLabs for consistency
   // raw-16khz-16bit-mono-pcm
   private static readonly OUTPUT_CHUNK_SIZE = 16000; // 16KB chunks for ~80ms at 16kHz mono PCM
@@ -57,9 +61,21 @@ export class MinimaxStreamingTextToSpeechService
     channel: 1,
   };
 
-  private async initializeWebSocketConnection(): Promise<WebSocket> {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      return this.ws;
+  private createStreamingContext(): StreamingContext {
+    return {
+      ws: null,
+      chunkBuffer: Buffer.alloc(0),
+      carryoverBuffer: Buffer.alloc(0),
+      isTaskStarted: false,
+      sessionId: Math.random().toString(36).substring(2, 15),
+    };
+  }
+
+  private async initializeWebSocketConnection(
+    context: StreamingContext
+  ): Promise<WebSocket> {
+    if (context.ws && context.ws.readyState === WebSocket.OPEN) {
+      return context.ws;
     }
 
     const config = ttsConfigs.minimax as TextToSpeechConfig;
@@ -69,7 +85,7 @@ export class MinimaxStreamingTextToSpeechService
 
     return new Promise((resolve, reject) => {
       try {
-        this.ws = new WebSocket(MinimaxStreamingTextToSpeechService.WS_URL, {
+        context.ws = new WebSocket(MinimaxStreamingTextToSpeechService.WS_URL, {
           headers: {
             Authorization: `Bearer ${config.apiKey}`,
           },
@@ -79,41 +95,46 @@ export class MinimaxStreamingTextToSpeechService
           reject(new Error('WebSocket connection timeout'));
         }, 10000);
 
-        this.ws.onopen = () => {
-          logger.debug('Minimax WebSocket connection opened');
+        context.ws.onopen = () => {
+          logger.debug(
+            `[${context.sessionId}] Minimax WebSocket connection opened`
+          );
         };
 
-        this.ws.onmessage = (event) => {
+        context.ws.onmessage = (event) => {
           try {
             const response = JSON.parse(event.data);
             if (response.event === 'connected_success') {
               clearTimeout(connectionTimeout);
               logger.info(
-                'Minimax Streaming TTS WebSocket connection established'
+                `[${context.sessionId}] Minimax Streaming TTS WebSocket connection established`
               );
-              resolve(this.ws!);
+              resolve(context.ws!);
             }
           } catch (error) {
             logger.error(
-              'Failed to parse WebSocket connection response:',
+              `[${context.sessionId}] Failed to parse WebSocket connection response:`,
               error
             );
             reject(error);
           }
         };
 
-        this.ws.onerror = (error) => {
+        context.ws.onerror = (error) => {
           clearTimeout(connectionTimeout);
-          logger.error('Minimax WebSocket connection error:', error);
+          logger.error(
+            `[${context.sessionId}] Minimax WebSocket connection error:`,
+            error
+          );
           reject(new Error('WebSocket connection failed'));
         };
 
-        this.ws.onclose = (event) => {
+        context.ws.onclose = (event) => {
           logger.debug(
-            `Minimax WebSocket connection closed: ${event.code} ${event.reason}`
+            `[${context.sessionId}] Minimax WebSocket connection closed: ${event.code} ${event.reason}`
           );
-          this.ws = null;
-          this.isTaskStarted = false;
+          context.ws = null;
+          context.isTaskStarted = false;
         };
       } catch (error) {
         reject(error);
@@ -121,14 +142,16 @@ export class MinimaxStreamingTextToSpeechService
     });
   }
 
-  private async startTask(): Promise<void> {
+  private async startTask(context: StreamingContext): Promise<void> {
     // Ensure WebSocket connection is ready
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      logger.warn('WebSocket not ready, re-establishing connection...');
-      await this.initializeWebSocketConnection();
+    if (!context.ws || context.ws.readyState !== WebSocket.OPEN) {
+      logger.warn(
+        `[${context.sessionId}] WebSocket not ready, re-establishing connection...`
+      );
+      await this.initializeWebSocketConnection(context);
     }
 
-    if (this.isTaskStarted) {
+    if (context.isTaskStarted) {
       return;
     }
 
@@ -149,13 +172,23 @@ export class MinimaxStreamingTextToSpeechService
     };
 
     return new Promise((resolve, reject) => {
-      if (!this.ws) {
+      if (!context.ws) {
         reject(new Error('WebSocket not connected'));
         return;
       }
 
+      // Check WebSocket state before sending
+      if (context.ws.readyState !== WebSocket.OPEN) {
+        reject(
+          new Error(
+            `WebSocket not ready for task start. State: ${context.ws.readyState}`
+          )
+        );
+        return;
+      }
+
       // Store reference to current WebSocket to avoid null access issues
-      const currentWs = this.ws;
+      const currentWs = context.ws;
       let isResolved = false;
 
       const messageHandler = (event: MessageEvent) => {
@@ -163,8 +196,10 @@ export class MinimaxStreamingTextToSpeechService
           const response = JSON.parse(event.data);
           if (response.event === 'task_started') {
             currentWs.removeEventListener('message', messageHandler);
-            this.isTaskStarted = true;
-            logger.debug('Minimax TTS task started successfully');
+            context.isTaskStarted = true;
+            logger.debug(
+              `[${context.sessionId}] Minimax TTS task started successfully`
+            );
             if (!isResolved) {
               isResolved = true;
               resolve();
@@ -190,7 +225,17 @@ export class MinimaxStreamingTextToSpeechService
       };
 
       currentWs.addEventListener('message', messageHandler);
-      currentWs.send(JSON.stringify(startMessage));
+
+      try {
+        currentWs.send(JSON.stringify(startMessage));
+      } catch (error) {
+        currentWs.removeEventListener('message', messageHandler);
+        if (!isResolved) {
+          isResolved = true;
+          reject(new Error(`Failed to send task start message: ${error}`));
+        }
+        return;
+      }
 
       // Add timeout for task start
       const timeoutId = setTimeout(() => {
@@ -221,31 +266,27 @@ export class MinimaxStreamingTextToSpeechService
     textChunks: AsyncIterable<string>,
     abortSignal?: AbortSignal
   ): AsyncIterable<Buffer> {
+    // Create a new context for this streaming request
+    const context = this.createStreamingContext();
+
     try {
       // Check if operation was cancelled before starting
       if (abortSignal?.aborted) {
         logger.info(
-          'Minimax Streaming TTS operation was cancelled before starting'
+          `[${context.sessionId}] Minimax Streaming TTS operation was cancelled before starting`
         );
         return;
       }
 
-      // Reset buffers for new synthesis session
-      this.chunkBuffer = Buffer.alloc(0);
-      this.carryoverBuffer = Buffer.alloc(0);
-      this.isTaskStarted = false;
+      logger.info(
+        `[${context.sessionId}] Starting new Minimax streaming session`
+      );
 
-      // Initialize WebSocket connection
-      await this.initializeWebSocketConnection();
+      // Initialize WebSocket connection for this context
+      await this.initializeWebSocketConnection(context);
 
       // Start the task first
-      await this.startTask();
-
-      // Store reference to current WebSocket to avoid null access issues
-      const currentWs = this.ws;
-      if (!currentWs) {
-        throw new Error('WebSocket not available');
-      }
+      await this.startTask(context);
 
       try {
         // Process text chunks incrementally for better real-time performance
@@ -255,7 +296,7 @@ export class MinimaxStreamingTextToSpeechService
         for await (const textChunk of textChunks) {
           if (abortSignal?.aborted) {
             logger.info(
-              'Minimax Streaming TTS operation was cancelled during text collection'
+              `[${context.sessionId}] Minimax Streaming TTS operation was cancelled during text collection`
             );
             break;
           }
@@ -271,11 +312,15 @@ export class MinimaxStreamingTextToSpeechService
 
             if (shouldSynthesize) {
               logger.info(
-                `Starting Minimax TTS synthesis for text: "${accumulatedText.substring(0, 50)}..." (${accumulatedText.length} chars)`
+                `[${context.sessionId}] Starting Minimax TTS synthesis for text: "${accumulatedText.substring(0, 50)}..." (${accumulatedText.length} chars)`
               );
 
               // Synthesize accumulated text and yield audio chunks
-              yield* this.synthesizeTextChunk(accumulatedText, abortSignal);
+              yield* this.synthesizeTextChunk(
+                context,
+                accumulatedText,
+                abortSignal
+              );
 
               // Reset for next chunk
               accumulatedText = '';
@@ -287,47 +332,61 @@ export class MinimaxStreamingTextToSpeechService
         // Synthesize any remaining text
         if (accumulatedText.trim() && !abortSignal?.aborted) {
           logger.info(
-            `Synthesizing remaining text: "${accumulatedText.substring(0, 50)}..." (${accumulatedText.length} chars)`
+            `[${context.sessionId}] Synthesizing remaining text: "${accumulatedText.substring(0, 50)}..." (${accumulatedText.length} chars)`
           );
-          yield* this.synthesizeTextChunk(accumulatedText, abortSignal);
+          yield* this.synthesizeTextChunk(
+            context,
+            accumulatedText,
+            abortSignal
+          );
         }
 
         // Send task_finish after all text chunks have been processed
-        await this.finishTask();
+        await this.finishTask(context);
 
         // Handle any remaining carryover
-        yield* this.flushRemainingBuffer();
+        yield* this.flushRemainingBuffer(context);
       } finally {
         // Cleanup is handled in closeConnection()
       }
 
       // Clean up buffers
-      this.chunkBuffer = Buffer.alloc(0);
-      this.carryoverBuffer = Buffer.alloc(0);
+      context.chunkBuffer = Buffer.alloc(0);
+      context.carryoverBuffer = Buffer.alloc(0);
     } catch (error) {
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
-          logger.info('Minimax Streaming TTS operation was cancelled');
+          logger.info(
+            `[${context.sessionId}] Minimax Streaming TTS operation was cancelled`
+          );
           return;
         }
         if (
           error.message.includes('Minimax API key') ||
           error.message.includes('WebSocket')
         ) {
-          logger.error(error.message);
+          logger.error(`[${context.sessionId}] ${error.message}`);
           return;
         }
       }
-      logger.error('Minimax Streaming TTS failed:', error);
+      logger.error(
+        `[${context.sessionId}] Minimax Streaming TTS failed:`,
+        error
+      );
       throw error;
     } finally {
-      await this.closeConnection();
+      await this.closeConnection(context);
     }
   }
 
-  private async sendTextChunk(text: string): Promise<void> {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      logger.warn('WebSocket connection not available for sending text chunk');
+  private async sendTextChunk(
+    context: StreamingContext,
+    text: string
+  ): Promise<void> {
+    if (!context.ws || context.ws.readyState !== WebSocket.OPEN) {
+      logger.warn(
+        `[${context.sessionId}] WebSocket connection not available for sending text chunk`
+      );
       return; // Don't throw, just skip this chunk
     }
 
@@ -336,19 +395,24 @@ export class MinimaxStreamingTextToSpeechService
       text: text.replace(/\s+/g, ' ').trim(),
     };
 
-    logger.debug(`Minimax Streaming TTS sending text chunk:`, continueMessage);
+    logger.debug(
+      `[${context.sessionId}] Minimax Streaming TTS sending text chunk:`,
+      continueMessage
+    );
 
     try {
-      this.ws.send(JSON.stringify(continueMessage));
+      context.ws.send(JSON.stringify(continueMessage));
     } catch (error) {
-      logger.error('Failed to send text chunk:', error);
+      logger.error(`[${context.sessionId}] Failed to send text chunk:`, error);
       // Don't throw, just log the error to prevent breaking the stream
     }
   }
 
-  private async finishTask(): Promise<void> {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
-      logger.warn('WebSocket connection not available for finishing task');
+  private async finishTask(context: StreamingContext): Promise<void> {
+    if (!context.ws || context.ws.readyState !== WebSocket.OPEN) {
+      logger.warn(
+        `[${context.sessionId}] WebSocket connection not available for finishing task`
+      );
       return; // Don't throw, just skip finishing
     }
 
@@ -356,12 +420,17 @@ export class MinimaxStreamingTextToSpeechService
       event: 'task_finish',
     };
 
-    logger.debug('Minimax Streaming TTS sending task_finish');
+    logger.debug(
+      `[${context.sessionId}] Minimax Streaming TTS sending task_finish`
+    );
 
     try {
-      this.ws.send(JSON.stringify(finishMessage));
+      context.ws.send(JSON.stringify(finishMessage));
     } catch (error) {
-      logger.error('Failed to send task_finish message:', error);
+      logger.error(
+        `[${context.sessionId}] Failed to send task_finish message:`,
+        error
+      );
       // Don't throw, just log the error
     }
   }
@@ -382,7 +451,7 @@ export class MinimaxStreamingTextToSpeechService
 
   private shouldStartSynthesis(text: string, isFirstChunk: boolean): boolean {
     // Start synthesis on first chunk if we have some text
-    if (isFirstChunk && text.trim().length > 10) {
+    if (isFirstChunk && text.trim().length > 5) {
       return true;
     }
 
@@ -392,8 +461,8 @@ export class MinimaxStreamingTextToSpeechService
       return true;
     }
 
-    // Start synthesis when we have accumulated enough text (to avoid too many small chunks)
-    if (text.length > 100) {
+    // Start synthesis when we have accumulated enough text (optimized for streaming)
+    if (text.length > 50) {
       return true;
     }
 
@@ -401,6 +470,7 @@ export class MinimaxStreamingTextToSpeechService
   }
 
   private async *synthesizeTextChunk(
+    context: StreamingContext,
     text: string,
     abortSignal?: AbortSignal
   ): AsyncIterable<Buffer> {
@@ -410,19 +480,21 @@ export class MinimaxStreamingTextToSpeechService
 
     // Skip special messages
     if (text.startsWith('[') && text.endsWith(']')) {
-      logger.info(`Skipping streaming TTS for special message: ${text}`);
+      logger.info(
+        `[${context.sessionId}] Skipping streaming TTS for special message: ${text}`
+      );
       return;
     }
 
     try {
       logger.debug(
-        `Minimax Streaming TTS starting synthesis for text chunk: "${text.substring(0, 50)}..."`
+        `[${context.sessionId}] Minimax Streaming TTS starting synthesis for text chunk: "${text.substring(0, 50)}..."`
       );
 
       // Check if operation was cancelled before starting synthesis
       if (abortSignal?.aborted) {
         logger.info(
-          'Minimax Streaming TTS chunk synthesis was cancelled before starting'
+          `[${context.sessionId}] Minimax Streaming TTS chunk synthesis was cancelled before starting`
         );
         return;
       }
@@ -433,18 +505,18 @@ export class MinimaxStreamingTextToSpeechService
       let audioCollectionError: Error | null = null;
 
       // Store reference to current WebSocket
-      if (!this.ws || this.ws.readyState !== 1) {
+      if (!context.ws || context.ws.readyState !== 1) {
         logger.warn(
-          'WebSocket not ready for chunk synthesis, re-establishing...'
+          `[${context.sessionId}] WebSocket not ready for chunk synthesis, re-establishing...`
         );
-        await this.initializeWebSocketConnection();
-        await this.startTask();
+        await this.initializeWebSocketConnection(context);
+        await this.startTask(context);
       }
 
-      const currentWs = this.ws;
+      const currentWs = context.ws;
       if (!currentWs) {
         logger.error(
-          'Failed to establish WebSocket connection for chunk synthesis'
+          `[${context.sessionId}] Failed to establish WebSocket connection for chunk synthesis`
         );
         return;
       }
@@ -463,7 +535,7 @@ export class MinimaxStreamingTextToSpeechService
           const response: MinimaxTaskResponse = JSON.parse(event.data);
 
           logger.debug(
-            `Minimax chunk message: ${response.event}${response.is_final ? ' (final)' : ''}`
+            `[${context.sessionId}] Minimax chunk message: ${response.event}${response.is_final ? ' (final)' : ''}`
           );
 
           if (response.data?.audio) {
@@ -473,18 +545,20 @@ export class MinimaxStreamingTextToSpeechService
             totalAudioBytesReceived += audioBuffer.length;
 
             logger.debug(
-              `Chunk audio message #${audioMessageCount}: ${audioBuffer.length} bytes`
+              `[${context.sessionId}] Chunk audio message #${audioMessageCount}: ${audioBuffer.length} bytes`
             );
 
             // Process the audio chunk and add to queue
-            for (const chunk of this.processAudioChunk(audioBuffer)) {
+            for (const chunk of this.processAudioChunk(context, audioBuffer)) {
               audioChunkQueue.push(chunk);
             }
           }
 
           // Check for errors
           if (response.event === 'error') {
-            logger.error(`Minimax chunk error: ${JSON.stringify(response)}`);
+            logger.error(
+              `[${context.sessionId}] Minimax chunk error: ${JSON.stringify(response)}`
+            );
             audioCollectionError = new Error(
               `Minimax chunk error: ${JSON.stringify(response)}`
             );
@@ -492,12 +566,15 @@ export class MinimaxStreamingTextToSpeechService
 
           if (response.is_final) {
             logger.info(
-              `Minimax chunk final message received. Audio messages: ${audioMessageCount}, bytes: ${totalAudioBytesReceived}`
+              `[${context.sessionId}] Minimax chunk final message received. Audio messages: ${audioMessageCount}, bytes: ${totalAudioBytesReceived}`
             );
             audioCollectionFinished = true;
           }
         } catch (error) {
-          logger.error('Error processing chunk audio message:', error);
+          logger.error(
+            `[${context.sessionId}] Error processing chunk audio message:`,
+            error
+          );
           audioCollectionError = error as Error;
         }
       };
@@ -507,10 +584,12 @@ export class MinimaxStreamingTextToSpeechService
 
       try {
         // Send the text chunk
-        await this.sendTextChunk(text);
+        await this.sendTextChunk(context, text);
 
         // Wait for and yield audio chunks as they arrive
-        logger.debug('Text chunk sent, collecting audio...');
+        logger.debug(
+          `[${context.sessionId}] Text chunk sent, collecting audio...`
+        );
 
         let waitingLoops = 0;
         let totalChunksYielded = 0;
@@ -529,14 +608,14 @@ export class MinimaxStreamingTextToSpeechService
             yield chunk;
             totalChunksYielded++;
             logger.debug(
-              `Yielded chunk ${totalChunksYielded}: ${chunk.length} bytes`
+              `[${context.sessionId}] Yielded chunk ${totalChunksYielded}: ${chunk.length} bytes`
             );
           }
 
           // Check if WebSocket closed unexpectedly
           if ((currentWs.readyState as number) === WebSocket.CLOSED) {
             logger.warn(
-              'WebSocket closed unexpectedly while waiting for chunk audio'
+              `[${context.sessionId}] WebSocket closed unexpectedly while waiting for chunk audio`
             );
             break;
           }
@@ -546,7 +625,9 @@ export class MinimaxStreamingTextToSpeechService
 
           // Timeout after reasonable wait (30 seconds)
           if (waitingLoops > 3000) {
-            logger.warn('Timeout waiting for chunk audio completion');
+            logger.warn(
+              `[${context.sessionId}] Timeout waiting for chunk audio completion`
+            );
             break;
           }
         }
@@ -558,7 +639,7 @@ export class MinimaxStreamingTextToSpeechService
         }
 
         logger.debug(
-          `Completed text chunk synthesis. Total chunks yielded: ${totalChunksYielded}`
+          `[${context.sessionId}] Completed text chunk synthesis. Total chunks yielded: ${totalChunksYielded}`
         );
 
         if (audioCollectionError) {
@@ -576,24 +657,34 @@ export class MinimaxStreamingTextToSpeechService
     } catch (error) {
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
-          logger.info('Minimax Streaming TTS chunk synthesis was cancelled');
+          logger.info(
+            `[${context.sessionId}] Minimax Streaming TTS chunk synthesis was cancelled`
+          );
           return;
         }
       }
-      logger.error('Minimax Streaming TTS chunk synthesis failed:', error);
+      logger.error(
+        `[${context.sessionId}] Minimax Streaming TTS chunk synthesis failed:`,
+        error
+      );
       throw error;
     }
   }
 
-  private *processAudioChunk(inputBuffer: Buffer): IterableIterator<Buffer> {
-    logger.debug(`Processing audio chunk: ${inputBuffer.length} bytes`);
+  private *processAudioChunk(
+    context: StreamingContext,
+    inputBuffer: Buffer
+  ): IterableIterator<Buffer> {
+    logger.debug(
+      `[${context.sessionId}] Processing audio chunk: ${inputBuffer.length} bytes`
+    );
 
     // Handle carryover from previous chunk if any
-    if (this.carryoverBuffer.length > 0) {
-      inputBuffer = Buffer.concat([this.carryoverBuffer, inputBuffer]);
-      this.carryoverBuffer = Buffer.alloc(0);
+    if (context.carryoverBuffer.length > 0) {
+      inputBuffer = Buffer.concat([context.carryoverBuffer, inputBuffer]);
+      context.carryoverBuffer = Buffer.alloc(0);
       logger.debug(
-        `Merged carryover, new buffer size: ${inputBuffer.length} bytes`
+        `[${context.sessionId}] Merged carryover, new buffer size: ${inputBuffer.length} bytes`
       );
     }
 
@@ -602,27 +693,29 @@ export class MinimaxStreamingTextToSpeechService
       inputBuffer.length % MinimaxStreamingTextToSpeechService.SAMPLE_WIDTH !==
       0
     ) {
-      logger.debug(`Handling odd-length chunk: ${inputBuffer.length} bytes`);
+      logger.debug(
+        `[${context.sessionId}] Handling odd-length chunk: ${inputBuffer.length} bytes`
+      );
 
       // Carry over the last byte to maintain alignment
-      this.carryoverBuffer = inputBuffer.subarray(inputBuffer.length - 1);
+      context.carryoverBuffer = inputBuffer.subarray(inputBuffer.length - 1);
       inputBuffer = inputBuffer.subarray(0, inputBuffer.length - 1);
 
       logger.debug(
-        `Aligned chunk to ${inputBuffer.length} bytes, carrying over 1 byte`
+        `[${context.sessionId}] Aligned chunk to ${inputBuffer.length} bytes, carrying over 1 byte`
       );
     }
 
     // Append incoming buffer to chunk buffer
-    this.chunkBuffer = Buffer.concat([this.chunkBuffer, inputBuffer]);
+    context.chunkBuffer = Buffer.concat([context.chunkBuffer, inputBuffer]);
 
     // Yield consistent-sized chunks while we have enough data
     while (
-      this.chunkBuffer.length >=
+      context.chunkBuffer.length >=
       MinimaxStreamingTextToSpeechService.OUTPUT_CHUNK_SIZE
     ) {
       // Extract exactly OUTPUT_CHUNK_SIZE bytes
-      const outputChunk = this.chunkBuffer.subarray(
+      const outputChunk = context.chunkBuffer.subarray(
         0,
         MinimaxStreamingTextToSpeechService.OUTPUT_CHUNK_SIZE
       );
@@ -634,7 +727,7 @@ export class MinimaxStreamingTextToSpeechService
         0
       ) {
         logger.warn(
-          `Output chunk alignment issue: ${outputChunk.length} bytes is not divisible by ${MinimaxStreamingTextToSpeechService.SAMPLE_WIDTH}`
+          `[${context.sessionId}] Output chunk alignment issue: ${outputChunk.length} bytes is not divisible by ${MinimaxStreamingTextToSpeechService.SAMPLE_WIDTH}`
         );
         // Hold back the last byte to maintain alignment
         const alignedSize =
@@ -643,88 +736,97 @@ export class MinimaxStreamingTextToSpeechService
               MinimaxStreamingTextToSpeechService.SAMPLE_WIDTH
           ) * MinimaxStreamingTextToSpeechService.SAMPLE_WIDTH;
         const alignedChunk = outputChunk.subarray(0, alignedSize);
-        this.chunkBuffer = Buffer.concat([
+        context.chunkBuffer = Buffer.concat([
           outputChunk.subarray(alignedSize),
-          this.chunkBuffer.subarray(
+          context.chunkBuffer.subarray(
             MinimaxStreamingTextToSpeechService.OUTPUT_CHUNK_SIZE
           ),
         ]);
 
         if (alignedChunk.length > 0) {
           logger.debug(
-            `Yielding aligned PCM chunk: ${alignedChunk.length} bytes`
+            `[${context.sessionId}] Yielding aligned PCM chunk: ${alignedChunk.length} bytes`
           );
           yield alignedChunk;
         }
       } else {
         // Update buffer to contain only remaining bytes
-        this.chunkBuffer = this.chunkBuffer.subarray(
+        context.chunkBuffer = context.chunkBuffer.subarray(
           MinimaxStreamingTextToSpeechService.OUTPUT_CHUNK_SIZE
         );
 
         logger.debug(
-          `Yielding consistent PCM chunk: ${outputChunk.length} bytes`
+          `[${context.sessionId}] Yielding consistent PCM chunk: ${outputChunk.length} bytes`
         );
         yield outputChunk;
       }
     }
   }
 
-  private *flushRemainingBuffer(): IterableIterator<Buffer> {
+  private *flushRemainingBuffer(
+    context: StreamingContext
+  ): IterableIterator<Buffer> {
     // Handle any remaining carryover first
-    if (this.carryoverBuffer.length > 0) {
+    if (context.carryoverBuffer.length > 0) {
       logger.warn(
-        `Discarding ${this.carryoverBuffer.length} byte carryover at end of stream`
+        `[${context.sessionId}] Discarding ${context.carryoverBuffer.length} byte carryover at end of stream`
       );
-      this.carryoverBuffer = Buffer.alloc(0);
+      context.carryoverBuffer = Buffer.alloc(0);
     }
 
     // Flush remaining buffered data
-    if (this.chunkBuffer.length === 0) {
+    if (context.chunkBuffer.length === 0) {
       return;
     }
 
     // Ensure final chunk is properly aligned
     const alignedSize =
       Math.floor(
-        this.chunkBuffer.length /
+        context.chunkBuffer.length /
           MinimaxStreamingTextToSpeechService.SAMPLE_WIDTH
       ) * MinimaxStreamingTextToSpeechService.SAMPLE_WIDTH;
 
     if (alignedSize > 0) {
-      const finalChunk = this.chunkBuffer.subarray(0, alignedSize);
-      logger.debug(`Flushing final PCM chunk: ${finalChunk.length} bytes`);
+      const finalChunk = context.chunkBuffer.subarray(0, alignedSize);
+      logger.debug(
+        `[${context.sessionId}] Flushing final PCM chunk: ${finalChunk.length} bytes`
+      );
       yield finalChunk;
     }
 
-    if (this.chunkBuffer.length > alignedSize) {
+    if (context.chunkBuffer.length > alignedSize) {
       logger.warn(
-        `Discarding ${this.chunkBuffer.length - alignedSize} unaligned bytes at end of stream`
+        `[${context.sessionId}] Discarding ${context.chunkBuffer.length - alignedSize} unaligned bytes at end of stream`
       );
     }
 
     // Clear the buffer
-    this.chunkBuffer = Buffer.alloc(0);
+    context.chunkBuffer = Buffer.alloc(0);
   }
 
-  private async closeConnection(): Promise<void> {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+  private async closeConnection(context: StreamingContext): Promise<void> {
+    if (context.ws && context.ws.readyState === WebSocket.OPEN) {
       try {
         // Give some time for any pending messages to process
         await new Promise((resolve) => setTimeout(resolve, 100));
 
-        this.ws.close();
-        logger.info('Minimax Streaming TTS WebSocket connection closed');
+        context.ws.close();
+        logger.info(
+          `[${context.sessionId}] Minimax Streaming TTS WebSocket connection closed`
+        );
       } catch (error) {
-        logger.error('Error closing Minimax WebSocket connection:', error);
+        logger.error(
+          `[${context.sessionId}] Error closing Minimax WebSocket connection:`,
+          error
+        );
       }
     }
 
-    this.ws = null;
-    this.isTaskStarted = false;
+    context.ws = null;
+    context.isTaskStarted = false;
 
     // Clean up buffers
-    this.chunkBuffer = Buffer.alloc(0);
-    this.carryoverBuffer = Buffer.alloc(0);
+    context.chunkBuffer = Buffer.alloc(0);
+    context.carryoverBuffer = Buffer.alloc(0);
   }
 }

@@ -94,32 +94,46 @@ class ZenApp extends EventEmitter {
     try {
       console.log('🚀 ZenApp: Starting initialization...');
 
-      // Step 1: Configure ONNX Runtime for maximum compatibility
-      this._configureONNXRuntime();
-
-      // Step 2: Detect mobile devices
+      // Step 1: Detect mobile devices first
       this.isMobile = this._detectMobileBrowser();
       console.log('📱 Mobile device detected:', this.isMobile);
 
+      // Log detailed mobile environment info for debugging
+      if (this.isMobile) {
+        this._logMobileEnvironment();
+      }
+
+      // Step 1.5: Check script accessibility (especially for mobile debugging)
+      await this._checkScriptAccessibility();
+
+      // Step 2: Configure ONNX Runtime for maximum compatibility
+      this._configureONNXRuntime();
+
       // Step 3: Check browser compatibility
+      console.log('🔍 Step 3: Checking browser compatibility...');
       if (!this._checkBrowserCompatibility()) {
         throw new Error('Browser compatibility check failed');
       }
 
       // Step 4: Initialize AudioPlayer
+      console.log('🎵 Step 4: Initializing AudioPlayer...');
       this.audioPlayer = new AudioPlayer();
       this._setupAudioPlayerCallbacks();
 
       // Step 5: Initialize modules (these will be imported dynamically)
+      console.log('📦 Step 5: Initializing modules...');
       await this._initializeModules();
 
       // Step 6: Bootstrap authentication
+      console.log('🔐 Step 6: Bootstrapping authentication...');
       await this._bootstrapAuthentication();
 
       // Step 7: Setup event listeners
+      console.log('👂 Step 7: Setting up event listeners...');
       this._setupEventListeners();
 
       // Step 8: auto-initialize VAD, for faster startup
+      console.log('🎤 Step 8: Initializing VAD...');
       await this._initializeVAD();
 
       // Step 9: Don't auto-connect, wait for user interaction
@@ -128,7 +142,7 @@ class ZenApp extends EventEmitter {
       this.isInitialized = true;
       this.emit('initialized');
 
-      console.log('✅ ZenApp: Initialization complete');
+      console.log('✅ ZenApp: Initialization complete - all steps successful!');
     } catch (error) {
       console.error('❌ ZenApp: Initialization failed:', error);
       this.emit('initializationError', error);
@@ -140,13 +154,37 @@ class ZenApp extends EventEmitter {
    * Configure ONNX Runtime for maximum browser compatibility
    */
   _configureONNXRuntime() {
-    if (typeof ort !== 'undefined') {
-      Object.assign(ort.env.wasm, ONNX_CONFIG);
-      ort.env.executionProviders = ONNX_CONFIG.executionProviders;
-      ort.env.logLevel = ONNX_CONFIG.logLevel;
-      console.log('🧠 ONNX Runtime configured for compatibility mode');
-    } else {
-      console.warn('⚠️ ONNX Runtime not available');
+    try {
+      if (typeof ort !== 'undefined') {
+        // Extra mobile compatibility settings
+        if (this.isMobile) {
+          ONNX_CONFIG.numThreads = 1; // Force single thread on mobile
+          ONNX_CONFIG.simd = false; // Disable SIMD on mobile for compatibility
+          console.log('📱 Applying mobile-specific ONNX configuration');
+        }
+
+        Object.assign(ort.env.wasm, ONNX_CONFIG);
+        ort.env.executionProviders = ONNX_CONFIG.executionProviders;
+        ort.env.logLevel = ONNX_CONFIG.logLevel;
+        console.log('🧠 ONNX Runtime configured for compatibility mode');
+      } else {
+        console.warn(
+          '⚠️ ONNX Runtime not available - this may cause AI processing failures'
+        );
+        if (this.isMobile) {
+          console.warn(
+            '📱 Mobile browser may not support ONNX Runtime - consider desktop browser for full functionality'
+          );
+        }
+      }
+    } catch (error) {
+      console.error('❌ Failed to configure ONNX Runtime:', error);
+      if (this.isMobile) {
+        console.warn(
+          '📱 Mobile ONNX configuration failed - some features may not work'
+        );
+      }
+      // Don't throw here, let the app continue with degraded functionality
     }
   }
 
@@ -167,9 +205,116 @@ class ZenApp extends EventEmitter {
   }
 
   /**
+   * Log detailed mobile environment information for debugging
+   */
+  _logMobileEnvironment() {
+    console.log('📱 === MOBILE ENVIRONMENT DEBUG INFO ===');
+    console.log('📱 User Agent:', navigator.userAgent);
+    console.log('📱 Platform:', navigator.platform);
+    console.log('📱 Touch Support:', 'ontouchstart' in window);
+    console.log('📱 Max Touch Points:', navigator.maxTouchPoints);
+    console.log('📱 Screen:', `${screen.width}x${screen.height}`);
+    console.log('📱 Viewport:', `${window.innerWidth}x${window.innerHeight}`);
+    console.log('📱 Device Pixel Ratio:', window.devicePixelRatio);
+    console.log(
+      '📱 Connection:',
+      navigator.connection
+        ? {
+            effectiveType: navigator.connection.effectiveType,
+            downlink: navigator.connection.downlink,
+            rtt: navigator.connection.rtt,
+          }
+        : 'Not available'
+    );
+    console.log('📱 Permissions API:', 'permissions' in navigator);
+    console.log('📱 Service Worker:', 'serviceWorker' in navigator);
+    console.log('📱 WebAssembly:', typeof WebAssembly !== 'undefined');
+    console.log(
+      '📱 AudioContext:',
+      typeof AudioContext !== 'undefined' ||
+        typeof webkitAudioContext !== 'undefined'
+    );
+    console.log(
+      '📱 getUserMedia:',
+      !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)
+    );
+    console.log('📱 HTTPS:', location.protocol === 'https:');
+    console.log('📱 === END MOBILE DEBUG INFO ===');
+  }
+
+  /**
+   * Check script accessibility for debugging mobile issues
+   */
+  async _checkScriptAccessibility() {
+    console.log('🔍 Checking script file accessibility...');
+
+    const requiredScripts = [
+      './auth.js',
+      './transport.js',
+      './vad.js',
+      './ui.js',
+      './audioPlayer.js',
+    ];
+
+    const checkResults = await Promise.allSettled(
+      requiredScripts.map(async (script) => {
+        try {
+          const response = await fetch(script, { method: 'HEAD' });
+          return {
+            script,
+            accessible: response.ok,
+            status: response.status,
+            headers: Object.fromEntries(response.headers.entries()),
+          };
+        } catch (error) {
+          return {
+            script,
+            accessible: false,
+            error: error.message,
+          };
+        }
+      })
+    );
+
+    checkResults.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        const { script, accessible, status, error } = result.value;
+        if (accessible) {
+          console.log(`✅ ${script}: accessible (${status})`);
+        } else {
+          console.error(`❌ ${script}: not accessible (${status || error})`);
+        }
+      } else {
+        console.error(
+          `❌ ${requiredScripts[index]}: check failed - ${result.reason}`
+        );
+      }
+    });
+
+    const inaccessibleScripts = checkResults
+      .filter(
+        (result) => result.status === 'fulfilled' && !result.value.accessible
+      )
+      .map((result) => result.value.script);
+
+    if (inaccessibleScripts.length > 0) {
+      console.error('🚨 Inaccessible scripts detected:', inaccessibleScripts);
+      if (this.isMobile) {
+        console.error(
+          '📱 Mobile browsers may have stricter security policies for script loading'
+        );
+      }
+    }
+  }
+
+  /**
    * Check browser compatibility
    */
   _checkBrowserCompatibility() {
+    console.log('🔍 Checking browser compatibility...');
+    console.log('📱 Mobile device detected:', this.isMobile);
+    console.log('🌐 User Agent:', navigator.userAgent);
+
     const required = {
       webAssembly: typeof WebAssembly !== 'undefined',
       audioContext:
@@ -182,12 +327,37 @@ class ZenApp extends EventEmitter {
       requestAnimationFrame: typeof requestAnimationFrame !== 'undefined',
     };
 
+    // Log each feature individually for debugging
+    Object.entries(required).forEach(([feature, supported]) => {
+      console.log(`${supported ? '✅' : '❌'} ${feature}: ${supported}`);
+    });
+
     const missing = Object.entries(required)
       .filter(([_, supported]) => !supported)
       .map(([feature, _]) => feature);
 
     if (missing.length > 0) {
       console.error('❌ Browser missing features:', missing);
+
+      // Provide mobile-specific guidance
+      if (this.isMobile) {
+        if (missing.includes('webAssembly')) {
+          console.error(
+            '📱 WebAssembly not supported on this mobile browser. Try Chrome or Safari.'
+          );
+        }
+        if (missing.includes('mediaDevices')) {
+          console.error(
+            '📱 Microphone access not available. Ensure HTTPS and grant permissions.'
+          );
+        }
+        if (missing.includes('audioContext')) {
+          console.error(
+            '📱 Audio API not supported. Update your browser or try Chrome/Safari.'
+          );
+        }
+      }
+
       this.emit('browserIncompatible', missing);
       return false;
     }
@@ -201,26 +371,37 @@ class ZenApp extends EventEmitter {
    */
   async _initializeModules() {
     try {
+      console.log('📦 Starting module initialization...');
+
       // Dynamic imports for modules - import singleton instances
+      const modulePromises = [
+        import('./auth.js').catch((error) => {
+          console.warn('⚠️ Failed to load auth.js, using mock:', error.message);
+          return { default: this._createMockAuthInstance() };
+        }),
+        import('./transport.js').catch((error) => {
+          console.warn(
+            '⚠️ Failed to load transport.js, using mock:',
+            error.message
+          );
+          return { default: this._createMockTransportInstance() };
+        }),
+        import('./vad.js').catch((error) => {
+          console.warn('⚠️ Failed to load vad.js, using mock:', error.message);
+          return { default: this._createMockVADInstance() };
+        }),
+        import('./ui.js').catch((error) => {
+          console.warn('⚠️ Failed to load ui.js, using mock:', error.message);
+          return { default: this._createMockUIInstance() };
+        }),
+      ];
+
       const [
         { default: authModule },
         { default: transportModule },
         { default: vadModule },
         { default: uiModule },
-      ] = await Promise.all([
-        import('./auth.js').catch(() => ({
-          default: this._createMockAuthInstance(),
-        })),
-        import('./transport.js').catch(() => ({
-          default: this._createMockTransportInstance(),
-        })),
-        import('./vad.js').catch(() => ({
-          default: this._createMockVADInstance(),
-        })),
-        import('./ui.js').catch(() => ({
-          default: this._createMockUIInstance(),
-        })),
-      ]);
+      ] = await Promise.all(modulePromises);
 
       // Use the imported singleton instances directly
       this.auth = authModule;
@@ -228,12 +409,33 @@ class ZenApp extends EventEmitter {
       this.vad = vadModule;
       this.ui = uiModule;
 
+      // Log what we got
+      console.log('📦 Module types loaded:', {
+        auth: this.auth.constructor.name,
+        transport: this.transport.constructor.name,
+        vad: this.vad.constructor.name,
+        ui: this.ui.constructor.name,
+      });
+
       // Setup inter-module communication
       this._setupModuleCommunication();
 
-      console.log('📦 All modules initialized');
+      console.log('📦 All modules initialized successfully');
     } catch (error) {
       console.error('❌ Module initialization failed:', error);
+
+      // Provide helpful guidance based on error
+      if (error.message.includes('import')) {
+        console.error(
+          '📱 Dynamic import failed - this browser may not support ES6 modules'
+        );
+        if (this.isMobile) {
+          console.error(
+            '📱 Try using Chrome or Safari on mobile for better ES6 support'
+          );
+        }
+      }
+
       throw error;
     }
   }
@@ -516,16 +718,145 @@ class ZenApp extends EventEmitter {
       this._cleanup();
     });
 
-    // Handle errors
+    // Handle errors with detailed logging
     window.addEventListener('error', (event) => {
-      console.error('Global error:', event.error);
-      this.ui.showError('An unexpected error occurred');
+      const errorInfo = {
+        message: event.error?.message || event.message || 'Unknown error',
+        filename: event.filename || 'Unknown file',
+        lineno: event.lineno || 'Unknown line',
+        colno: event.colno || 'Unknown column',
+        stack: event.error?.stack || 'No stack trace',
+        userAgent: navigator.userAgent,
+        isMobile: this.isMobile,
+      };
+
+      console.error('🔥 Global error details:', errorInfo);
+
+      // Show user-friendly error based on common mobile issues
+      let userMessage = 'An unexpected error occurred';
+      const lowerMessage = errorInfo.message.toLowerCase();
+
+      if (
+        lowerMessage.includes('script error') ||
+        errorInfo.message === 'Script error.' ||
+        errorInfo.message === ''
+      ) {
+        userMessage =
+          'Script loading failed. This often happens on mobile browsers due to security restrictions.';
+        console.error('🚨 Script Error Details:', {
+          message: errorInfo.message,
+          filename: errorInfo.filename,
+          lineno: errorInfo.lineno,
+          colno: errorInfo.colno,
+          isCrossOrigin:
+            errorInfo.filename &&
+            !errorInfo.filename.includes(window.location.origin),
+          currentOrigin: window.location.origin,
+          suggestions: [
+            'Try refreshing the page',
+            'Check if all script files are accessible',
+            'Ensure HTTPS is being used',
+            'Try a different browser (Chrome/Safari)',
+          ],
+        });
+      } else if (lowerMessage.includes('webassembly')) {
+        userMessage =
+          'WebAssembly not supported on this browser. Please try Chrome or Safari.';
+      } else if (lowerMessage.includes('onnx')) {
+        userMessage =
+          'AI processing not supported on this device. Please try a desktop browser.';
+      } else if (lowerMessage.includes('audiocontext')) {
+        userMessage = 'Audio not supported. Please enable audio and try again.';
+      } else if (lowerMessage.includes('getusermedia')) {
+        userMessage =
+          'Microphone access required. Please grant permission and reload.';
+      } else if (
+        lowerMessage.includes('import') ||
+        lowerMessage.includes('module')
+      ) {
+        userMessage =
+          'Module loading failed. Please update your browser or try Chrome/Safari.';
+      } else if (
+        lowerMessage.includes('cors') ||
+        lowerMessage.includes('cross-origin')
+      ) {
+        userMessage =
+          'Cross-origin resource loading blocked. Please ensure proper server configuration.';
+      } else if (
+        lowerMessage.includes('network') ||
+        lowerMessage.includes('fetch')
+      ) {
+        userMessage =
+          'Network error. Please check your internet connection and try again.';
+      }
+
+      this.ui.showError(`${userMessage} (${errorInfo.message})`);
     });
 
-    // Handle unhandled promise rejections
+    // Handle unhandled promise rejections with detailed logging
     window.addEventListener('unhandledrejection', (event) => {
-      console.error('Unhandled promise rejection:', event.reason);
-      this.ui.showError('An unexpected error occurred');
+      const errorInfo = {
+        reason: event.reason?.message || event.reason || 'Unknown reason',
+        stack: event.reason?.stack || 'No stack trace',
+        userAgent: navigator.userAgent,
+        isMobile: this.isMobile,
+      };
+
+      console.error('🔥 Unhandled promise rejection details:', errorInfo);
+
+      // Show user-friendly error based on common mobile issues
+      let userMessage = 'An unexpected error occurred';
+      const lowerReason = String(errorInfo.reason).toLowerCase();
+
+      if (
+        lowerReason.includes('script error') ||
+        errorInfo.reason === 'Script error.' ||
+        errorInfo.reason === ''
+      ) {
+        userMessage =
+          'Script loading failed. This often happens on mobile browsers due to security restrictions.';
+        console.error('🚨 Script Error in Promise Rejection:', {
+          reason: errorInfo.reason,
+          stack: errorInfo.stack,
+          suggestions: [
+            'Try refreshing the page',
+            'Check if all script files are accessible',
+            'Ensure HTTPS is being used',
+            'Try a different browser (Chrome/Safari)',
+          ],
+        });
+      } else if (lowerReason.includes('webassembly')) {
+        userMessage =
+          'WebAssembly not supported on this browser. Please try Chrome or Safari.';
+      } else if (lowerReason.includes('onnx')) {
+        userMessage =
+          'AI processing not supported on this device. Please try a desktop browser.';
+      } else if (lowerReason.includes('audiocontext')) {
+        userMessage = 'Audio not supported. Please enable audio and try again.';
+      } else if (lowerReason.includes('getusermedia')) {
+        userMessage =
+          'Microphone access required. Please grant permission and reload.';
+      } else if (
+        lowerReason.includes('import') ||
+        lowerReason.includes('module')
+      ) {
+        userMessage =
+          'Module loading failed. Please update your browser or try Chrome/Safari.';
+      } else if (
+        lowerReason.includes('cors') ||
+        lowerReason.includes('cross-origin')
+      ) {
+        userMessage =
+          'Cross-origin resource loading blocked. Please ensure proper server configuration.';
+      } else if (
+        lowerReason.includes('network') ||
+        lowerReason.includes('fetch')
+      ) {
+        userMessage =
+          'Network error. Please check your internet connection and try again.';
+      }
+
+      this.ui.showError(`${userMessage} (${errorInfo.reason})`);
     });
   }
 

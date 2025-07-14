@@ -185,52 +185,143 @@ export class VoiceAgentService {
             const streamingTtsService = streamProviderMap[ttsEngine]
               ? getStreamingTTSService(streamProviderMap[ttsEngine])
               : null;
-            let audioStreamPromise: Promise<void> | null = null;
 
             if (streamingTtsService && onAudioChunk) {
-              // Create async generator for text chunks
-              const textChunkGenerator = async function* (
-                this: VoiceAgentService
-              ) {
-                for await (const chunk of this.agentSwarmService.chatStream(
-                  transcript,
-                  context.session.bearerToken,
-                  enhancedContext,
-                  aiCtrl.signal
-                )) {
-                  logger.debug(
-                    `[${conversationId}] Streaming text chunk: "${chunk}"`
-                  );
-                  chunks.push(chunk);
-                  if (onTextChunk) {
-                    onTextChunk(chunk);
-                  }
-                  yield chunk;
-                }
-              }.bind(this);
+              // Decouple text and audio streaming for smooth, non-blocking performance
 
-              // Start streaming TTS in parallel
-              audioStreamPromise = (async () => {
+              // Text buffer for async communication between streams
+              const textChunkQueue: string[] = [];
+              let textStreamingComplete = false;
+              let textStreamingError: Error | null = null;
+
+              // Start text streaming immediately - this runs independently
+              const textStreamingPromise = (async () => {
                 try {
-                  for await (const audioChunk of streamingTtsService.synthesizeStream(
-                    textChunkGenerator(),
-                    ttsCtrl.signal
+                  logger.debug(
+                    `[${conversationId}] Starting independent text streaming`
+                  );
+                  for await (const chunk of this.agentSwarmService.chatStream(
+                    transcript,
+                    context.session.bearerToken,
+                    enhancedContext,
+                    aiCtrl.signal
                   )) {
-                    onAudioChunk(audioChunk);
+                    logger.debug(
+                      `[${conversationId}] Streaming text chunk: "${chunk}"`
+                    );
+                    chunks.push(chunk);
+
+                    // Send text chunk immediately - no blocking!
+                    if (onTextChunk) {
+                      onTextChunk(chunk);
+                    }
+
+                    // Add to queue for audio processing
+                    textChunkQueue.push(chunk);
                   }
+                  textStreamingComplete = true;
+                  logger.debug(
+                    `[${conversationId}] Text streaming completed, ${chunks.length} chunks total`
+                  );
                 } catch (error) {
+                  textStreamingError = error as Error;
+                  textStreamingComplete = true;
                   if (error instanceof Error && error.name === 'AbortError') {
                     logger.info(
-                      `[${conversationId}] Streaming TTS was cancelled for session ${sessionId}`
+                      `[${conversationId}] Text streaming was cancelled`
                     );
                   } else {
                     logger.error(
-                      `[${conversationId}] Streaming TTS failed:`,
+                      `[${conversationId}] Text streaming failed:`,
                       error
                     );
                   }
                 }
               })();
+
+              // Create async generator that consumes from the text queue
+              const audioTextGenerator =
+                async function* (): AsyncGenerator<string> {
+                  let queueIndex = 0;
+                  while (
+                    !textStreamingComplete ||
+                    queueIndex < textChunkQueue.length
+                  ) {
+                    // Check for text streaming errors
+                    if (textStreamingError) {
+                      logger.error(
+                        `[${conversationId}] Text streaming error in audio generator:`,
+                        textStreamingError
+                      );
+                      break;
+                    }
+
+                    // Yield available chunks
+                    while (queueIndex < textChunkQueue.length) {
+                      const chunk = textChunkQueue[queueIndex++];
+                      if (chunk && chunk.trim()) {
+                        yield chunk;
+                      }
+                    }
+
+                    // If no more chunks and streaming not complete, wait briefly
+                    if (
+                      queueIndex >= textChunkQueue.length &&
+                      !textStreamingComplete
+                    ) {
+                      await new Promise((resolve) => setTimeout(resolve, 10));
+                    }
+                  }
+                  logger.debug(
+                    `[${conversationId}] Audio text generator completed, processed ${queueIndex} chunks`
+                  );
+                };
+
+              // Start audio streaming in parallel - this doesn't block text streaming
+              const audioStreamingPromise = (async () => {
+                try {
+                  logger.debug(
+                    `[${conversationId}] Starting parallel audio streaming`
+                  );
+                  let audioChunkCount = 0;
+                  for await (const audioChunk of streamingTtsService.synthesizeStream(
+                    audioTextGenerator(),
+                    ttsCtrl.signal
+                  )) {
+                    audioChunkCount++;
+                    onAudioChunk(audioChunk);
+                  }
+                  logger.debug(
+                    `[${conversationId}] Audio streaming completed, ${audioChunkCount} audio chunks sent`
+                  );
+                } catch (error) {
+                  if (error instanceof Error && error.name === 'AbortError') {
+                    logger.info(
+                      `[${conversationId}] Audio streaming was cancelled`
+                    );
+                  } else {
+                    logger.error(
+                      `[${conversationId}] Audio streaming failed:`,
+                      error
+                    );
+                  }
+                }
+              })();
+
+              // Wait for text streaming to complete (audio runs independently)
+              await textStreamingPromise;
+
+              // Don't wait for audio - let it complete in background
+              // This ensures text streaming remains smooth and responsive
+              audioStreamingPromise.catch((error) => {
+                // Audio errors should never affect text streaming
+                if (error instanceof Error && error.name !== 'AbortError') {
+                  logger.error(
+                    `[${conversationId}] Background audio streaming error:`,
+                    error
+                  );
+                }
+              });
             } else {
               // No streaming TTS available, just stream text
               for await (const chunk of this.agentSwarmService.chatStream(
@@ -244,11 +335,6 @@ export class VoiceAgentService {
                   onTextChunk(chunk);
                 }
               }
-            }
-
-            // Wait for audio streaming to complete if it was started
-            if (audioStreamPromise) {
-              await audioStreamPromise;
             }
 
             aiResponse = chunks.join('');

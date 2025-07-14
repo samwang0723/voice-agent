@@ -4,20 +4,35 @@ import type { IStreamingTextToSpeechService } from '../../domain/audio/audio.ser
 import type { TextToSpeechConfig } from '../../config';
 import logger from '../logger';
 
+// Connection context for each streaming request
+interface StreamingContext {
+  elevenLabsClient: ElevenLabsClient | null;
+  chunkBuffer: Buffer;
+  carryoverBuffer: Buffer;
+  sessionId: string;
+}
+
 export class ElevenLabsStreamingTextToSpeechService
   implements IStreamingTextToSpeechService
 {
-  private elevenLabsClient: ElevenLabsClient | null = null;
-  private chunkBuffer: Buffer = Buffer.alloc(0);
-  private carryoverBuffer: Buffer = Buffer.alloc(0); // For handling odd-length chunks
-
   // Chunk buffering constants for consistent audio output
   private static readonly OUTPUT_CHUNK_SIZE = 16000; // 16KB chunks for ~80ms at 16kHz mono PCM
   private static readonly SAMPLE_WIDTH = 2; // 2 bytes per 16-bit sample
 
-  private initializeElevenLabsClient(): ElevenLabsClient {
-    if (this.elevenLabsClient) {
-      return this.elevenLabsClient;
+  private createStreamingContext(): StreamingContext {
+    return {
+      elevenLabsClient: null,
+      chunkBuffer: Buffer.alloc(0),
+      carryoverBuffer: Buffer.alloc(0),
+      sessionId: Math.random().toString(36).substring(2, 15),
+    };
+  }
+
+  private initializeElevenLabsClient(
+    context: StreamingContext
+  ): ElevenLabsClient {
+    if (context.elevenLabsClient) {
+      return context.elevenLabsClient;
     }
 
     const config = ttsConfigs.elevenlabs as TextToSpeechConfig;
@@ -33,30 +48,35 @@ export class ElevenLabsStreamingTextToSpeechService
       );
     }
 
-    this.elevenLabsClient = new ElevenLabsClient({
+    context.elevenLabsClient = new ElevenLabsClient({
       apiKey: config.apiKey,
     });
 
-    logger.info('ElevenLabs Streaming TTS configuration initialized');
-    return this.elevenLabsClient;
+    logger.info(
+      `[${context.sessionId}] ElevenLabs Streaming TTS configuration initialized`
+    );
+    return context.elevenLabsClient;
   }
 
   async *synthesizeStream(
     textChunks: AsyncIterable<string>,
     abortSignal?: AbortSignal
   ): AsyncIterable<Buffer> {
+    // Create a new context for this streaming request
+    const context = this.createStreamingContext();
+
     try {
       // Check if operation was cancelled before starting
       if (abortSignal?.aborted) {
         logger.info(
-          'ElevenLabs Streaming TTS operation was cancelled before starting'
+          `[${context.sessionId}] ElevenLabs Streaming TTS operation was cancelled before starting`
         );
         return;
       }
 
-      // Reset buffers for new synthesis session
-      this.chunkBuffer = Buffer.alloc(0);
-      this.carryoverBuffer = Buffer.alloc(0);
+      logger.info(
+        `[${context.sessionId}] Starting new ElevenLabs streaming session`
+      );
 
       // Accumulate text chunks for synthesis
       let accumulatedText = '';
@@ -67,7 +87,7 @@ export class ElevenLabsStreamingTextToSpeechService
       for await (const textChunk of textChunks) {
         if (abortSignal?.aborted) {
           logger.info(
-            'ElevenLabs Streaming TTS operation was cancelled during text collection'
+            `[${context.sessionId}] ElevenLabs Streaming TTS operation was cancelled during text collection`
           );
           return;
         }
@@ -85,7 +105,11 @@ export class ElevenLabsStreamingTextToSpeechService
 
           if (shouldSynthesize) {
             // Synthesize accumulated text and yield audio chunks
-            yield* this.synthesizeTextChunk(accumulatedText, abortSignal);
+            yield* this.synthesizeTextChunk(
+              context,
+              accumulatedText,
+              abortSignal
+            );
 
             // Reset for next chunk
             accumulatedText = '';
@@ -96,32 +120,37 @@ export class ElevenLabsStreamingTextToSpeechService
 
       // Synthesize any remaining text
       if (accumulatedText.trim() && !abortSignal?.aborted) {
-        yield* this.synthesizeTextChunk(accumulatedText, abortSignal);
+        yield* this.synthesizeTextChunk(context, accumulatedText, abortSignal);
       }
 
       // Flush any remaining buffered audio data
-      if (this.chunkBuffer.length > 0 && !abortSignal?.aborted) {
-        yield* this.flushRemainingBuffer();
+      if (context.chunkBuffer.length > 0 && !abortSignal?.aborted) {
+        yield* this.flushRemainingBuffer(context);
       }
 
       // Clean up buffers
-      this.chunkBuffer = Buffer.alloc(0);
-      this.carryoverBuffer = Buffer.alloc(0);
+      context.chunkBuffer = Buffer.alloc(0);
+      context.carryoverBuffer = Buffer.alloc(0);
     } catch (error) {
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
-          logger.info('ElevenLabs Streaming TTS operation was cancelled');
+          logger.info(
+            `[${context.sessionId}] ElevenLabs Streaming TTS operation was cancelled`
+          );
           return;
         }
         if (
           error.message.includes('ElevenLabs API key') ||
           error.message.includes('ElevenLabs Voice ID')
         ) {
-          logger.error(error.message);
+          logger.error(`[${context.sessionId}] ${error.message}`);
           return;
         }
       }
-      logger.error('ElevenLabs Streaming TTS failed:', error);
+      logger.error(
+        `[${context.sessionId}] ElevenLabs Streaming TTS failed:`,
+        error
+      );
       throw error;
     }
   }
@@ -147,6 +176,7 @@ export class ElevenLabsStreamingTextToSpeechService
   }
 
   private async *synthesizeTextChunk(
+    context: StreamingContext,
     text: string,
     abortSignal?: AbortSignal
   ): AsyncIterable<Buffer> {
@@ -156,22 +186,24 @@ export class ElevenLabsStreamingTextToSpeechService
 
     // Skip special messages
     if (text.startsWith('[') && text.endsWith(']')) {
-      logger.info(`Skipping streaming TTS for special message: ${text}`);
+      logger.info(
+        `[${context.sessionId}] Skipping streaming TTS for special message: ${text}`
+      );
       return;
     }
 
     try {
-      const elevenLabsClient = this.initializeElevenLabsClient();
+      const elevenLabsClient = this.initializeElevenLabsClient(context);
       const config = ttsConfigs.elevenlabs as TextToSpeechConfig;
 
       logger.debug(
-        `ElevenLabs Streaming TTS starting PCM synthesis for text: "${text.substring(0, 50)}..."`
+        `[${context.sessionId}] ElevenLabs Streaming TTS starting PCM synthesis for text: "${text.substring(0, 50)}..."`
       );
 
       // Check if operation was cancelled before starting synthesis
       if (abortSignal?.aborted) {
         logger.info(
-          'ElevenLabs Streaming TTS chunk synthesis was cancelled before starting'
+          `[${context.sessionId}] ElevenLabs Streaming TTS chunk synthesis was cancelled before starting`
         );
         return;
       }
@@ -194,37 +226,37 @@ export class ElevenLabsStreamingTextToSpeechService
       );
 
       logger.info(
-        `ElevenLabs Streaming TTS synthesis started (PCM 16kHz format) for text: "${text.substring(0, 50)}..."`
+        `[${context.sessionId}] ElevenLabs Streaming TTS synthesis started (PCM 16kHz format) for text: "${text.substring(0, 50)}..."`
       );
 
       // Iterate over the stream and yield chunks
       for await (const chunk of audioStream) {
         if (abortSignal?.aborted) {
           logger.info(
-            'ElevenLabs Streaming TTS chunk synthesis was cancelled during streaming'
+            `[${context.sessionId}] ElevenLabs Streaming TTS chunk synthesis was cancelled during streaming`
           );
           return;
         }
 
         let buffer = Buffer.from(chunk);
         logger.debug(
-          `ElevenLabs Streaming TTS received PCM audio chunk: ${buffer.length} bytes`
+          `[${context.sessionId}] ElevenLabs Streaming TTS received PCM audio chunk: ${buffer.length} bytes`
         );
 
         // Validate input chunk
         if (buffer.length === 0) {
           logger.warn(
-            'ElevenLabs Streaming TTS received zero-length chunk, skipping'
+            `[${context.sessionId}] ElevenLabs Streaming TTS received zero-length chunk, skipping`
           );
           continue;
         }
 
         // Handle carryover from previous chunk if any
-        if (this.carryoverBuffer.length > 0) {
-          buffer = Buffer.concat([this.carryoverBuffer, buffer]);
-          this.carryoverBuffer = Buffer.alloc(0);
+        if (context.carryoverBuffer.length > 0) {
+          buffer = Buffer.concat([context.carryoverBuffer, buffer]);
+          context.carryoverBuffer = Buffer.alloc(0);
           logger.debug(
-            `ElevenLabs Streaming TTS merged carryover byte, new buffer size: ${buffer.length} bytes`
+            `[${context.sessionId}] ElevenLabs Streaming TTS merged carryover byte, new buffer size: ${buffer.length} bytes`
           );
         }
 
@@ -235,56 +267,64 @@ export class ElevenLabsStreamingTextToSpeechService
           0
         ) {
           logger.debug(
-            `ElevenLabs Streaming TTS handling odd-length chunk: ${buffer.length} bytes`
+            `[${context.sessionId}] ElevenLabs Streaming TTS handling odd-length chunk: ${buffer.length} bytes`
           );
 
           // Carry over the last byte to maintain alignment
-          this.carryoverBuffer = buffer.subarray(buffer.length - 1);
+          context.carryoverBuffer = buffer.subarray(buffer.length - 1);
           buffer = buffer.subarray(0, buffer.length - 1);
 
           logger.debug(
-            `ElevenLabs Streaming TTS aligned chunk to ${buffer.length} bytes, carrying over 1 byte`
+            `[${context.sessionId}] ElevenLabs Streaming TTS aligned chunk to ${buffer.length} bytes, carrying over 1 byte`
           );
         }
 
         // Process chunk through buffering logic
-        yield* this.processAudioChunk(buffer);
+        yield* this.processAudioChunk(context, buffer);
       }
 
       // After all chunks are processed, handle any remaining carryover
-      if (this.carryoverBuffer.length > 0) {
+      if (context.carryoverBuffer.length > 0) {
         logger.warn(
-          `ElevenLabs Streaming TTS discarding ${this.carryoverBuffer.length} byte carryover at end of stream`
+          `[${context.sessionId}] ElevenLabs Streaming TTS discarding ${context.carryoverBuffer.length} byte carryover at end of stream`
         );
-        this.carryoverBuffer = Buffer.alloc(0);
+        context.carryoverBuffer = Buffer.alloc(0);
       }
 
       logger.debug(
-        `ElevenLabs Streaming TTS completed yielding all PCM chunks for text`
+        `[${context.sessionId}] ElevenLabs Streaming TTS completed yielding all PCM chunks for text`
       );
     } catch (error) {
       if (error instanceof Error) {
         if (error.message === 'AbortError' || error.name === 'AbortError') {
-          logger.info('ElevenLabs Streaming TTS chunk synthesis was cancelled');
+          logger.info(
+            `[${context.sessionId}] ElevenLabs Streaming TTS chunk synthesis was cancelled`
+          );
           return;
         }
       }
-      logger.error('ElevenLabs Streaming TTS chunk synthesis failed:', error);
+      logger.error(
+        `[${context.sessionId}] ElevenLabs Streaming TTS chunk synthesis failed:`,
+        error
+      );
       throw error;
     }
   }
 
-  private *processAudioChunk(inputBuffer: Buffer): IterableIterator<Buffer> {
+  private *processAudioChunk(
+    context: StreamingContext,
+    inputBuffer: Buffer
+  ): IterableIterator<Buffer> {
     // Append incoming buffer to chunk buffer
-    this.chunkBuffer = Buffer.concat([this.chunkBuffer, inputBuffer]);
+    context.chunkBuffer = Buffer.concat([context.chunkBuffer, inputBuffer]);
 
     // Yield consistent-sized chunks while we have enough data
     while (
-      this.chunkBuffer.length >=
+      context.chunkBuffer.length >=
       ElevenLabsStreamingTextToSpeechService.OUTPUT_CHUNK_SIZE
     ) {
       // Extract exactly OUTPUT_CHUNK_SIZE bytes
-      const outputChunk = this.chunkBuffer.subarray(
+      const outputChunk = context.chunkBuffer.subarray(
         0,
         ElevenLabsStreamingTextToSpeechService.OUTPUT_CHUNK_SIZE
       );
@@ -296,7 +336,7 @@ export class ElevenLabsStreamingTextToSpeechService
         0
       ) {
         logger.warn(
-          `Output chunk alignment issue: ${outputChunk.length} bytes is not divisible by ${ElevenLabsStreamingTextToSpeechService.SAMPLE_WIDTH}`
+          `[${context.sessionId}] Output chunk alignment issue: ${outputChunk.length} bytes is not divisible by ${ElevenLabsStreamingTextToSpeechService.SAMPLE_WIDTH}`
         );
         // Hold back the last byte to maintain alignment
         const alignedSize =
@@ -305,60 +345,62 @@ export class ElevenLabsStreamingTextToSpeechService
               ElevenLabsStreamingTextToSpeechService.SAMPLE_WIDTH
           ) * ElevenLabsStreamingTextToSpeechService.SAMPLE_WIDTH;
         const alignedChunk = outputChunk.subarray(0, alignedSize);
-        this.chunkBuffer = Buffer.concat([
+        context.chunkBuffer = Buffer.concat([
           outputChunk.subarray(alignedSize),
-          this.chunkBuffer.subarray(
+          context.chunkBuffer.subarray(
             ElevenLabsStreamingTextToSpeechService.OUTPUT_CHUNK_SIZE
           ),
         ]);
 
         if (alignedChunk.length > 0) {
           logger.debug(
-            `ElevenLabs Streaming TTS yielding aligned PCM chunk: ${alignedChunk.length} bytes`
+            `[${context.sessionId}] ElevenLabs Streaming TTS yielding aligned PCM chunk: ${alignedChunk.length} bytes`
           );
           yield alignedChunk;
         }
       } else {
         // Update buffer to contain only remaining bytes
-        this.chunkBuffer = this.chunkBuffer.subarray(
+        context.chunkBuffer = context.chunkBuffer.subarray(
           ElevenLabsStreamingTextToSpeechService.OUTPUT_CHUNK_SIZE
         );
 
         logger.debug(
-          `ElevenLabs Streaming TTS yielding consistent PCM chunk: ${outputChunk.length} bytes`
+          `[${context.sessionId}] ElevenLabs Streaming TTS yielding consistent PCM chunk: ${outputChunk.length} bytes`
         );
         yield outputChunk;
       }
     }
   }
 
-  private *flushRemainingBuffer(): IterableIterator<Buffer> {
-    if (this.chunkBuffer.length === 0) {
+  private *flushRemainingBuffer(
+    context: StreamingContext
+  ): IterableIterator<Buffer> {
+    if (context.chunkBuffer.length === 0) {
       return;
     }
 
     // Ensure final chunk is properly aligned
     const alignedSize =
       Math.floor(
-        this.chunkBuffer.length /
+        context.chunkBuffer.length /
           ElevenLabsStreamingTextToSpeechService.SAMPLE_WIDTH
       ) * ElevenLabsStreamingTextToSpeechService.SAMPLE_WIDTH;
 
     if (alignedSize > 0) {
-      const finalChunk = this.chunkBuffer.subarray(0, alignedSize);
+      const finalChunk = context.chunkBuffer.subarray(0, alignedSize);
       logger.debug(
-        `ElevenLabs Streaming TTS flushing final PCM chunk: ${finalChunk.length} bytes`
+        `[${context.sessionId}] ElevenLabs Streaming TTS flushing final PCM chunk: ${finalChunk.length} bytes`
       );
       yield finalChunk;
     }
 
-    if (this.chunkBuffer.length > alignedSize) {
+    if (context.chunkBuffer.length > alignedSize) {
       logger.warn(
-        `ElevenLabs Streaming TTS discarding ${this.chunkBuffer.length - alignedSize} unaligned bytes at end of stream`
+        `[${context.sessionId}] ElevenLabs Streaming TTS discarding ${context.chunkBuffer.length - alignedSize} unaligned bytes at end of stream`
       );
     }
 
     // Clear the buffer
-    this.chunkBuffer = Buffer.alloc(0);
+    context.chunkBuffer = Buffer.alloc(0);
   }
 }
